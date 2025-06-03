@@ -1,21 +1,86 @@
 # BAAS Scheduler
 
-BAAS Scheduler is a Windows service for running scheduled scripts using cron expressions. It reads configuration from `appsettings.json` and exposes a simple web API.
+BAAS Scheduler is a small Windows service that executes scripted jobs according to cron expressions. Jobs and service settings are defined in `appsettings.json` and the application exposes a minimal HTTP API so you can inspect the configured jobs.
 
-## Building
+## Requirements
 
-```
+* [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) for building
+* Windows 10/11 or Windows Server when running as a service
+
+## Build
+
+To create a self-contained executable run:
+
+```bash
 dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true
 ```
 
-The resulting executable in `bin/Release/net8.0/win-x64/publish` can install itself as a service with:
+The output will be placed under `bin/Release/net8.0/win-x64/publish`.
 
-```
+## Running
+
+From the publish directory you can install the service:
+
+```bash
 BAASScheduler.exe --install
 ```
 
-Run as a console app for testing:
+Uninstall with:
 
+```bash
+BAASScheduler.exe --uninstall
 ```
+
+During development you can run it in the console instead of installing it:
+
+```bash
 BAASScheduler.exe --console
+```
+
+## Configuration
+
+All runtime settings are stored in `appsettings.json`.
+
+### Jobs
+Each entry in `Jobs` defines a scheduled task:
+
+```json
+{
+  "Name": "Sample",
+  "Schedule": "*/5 * * * *",
+  "Script": "C:/scripts/test.ps1",
+  "Type": "powershell"
+}
+```
+
+`Schedule` uses standard cron notation. `Type` may be `powershell`, `bat` or `exe`.
+
+### Web
+`Web` controls the HTTP listener:
+
+* `Host` - address to bind to
+* `Port` - port number
+* `Password` - password required by the API
+
+### Webhooks
+Optional webhook URLs which receive a message whenever a job completes or fails.
+
+```json
+"Webhooks": {
+  "Teams": "",
+  "Discord": ""
+}
+```
+
+## HTTP API
+
+* `GET /` – confirms the service is running
+* `GET /api/jobs` – lists all configured jobs
+
+Requests under `/api` must include the `X-Password` header with the password from configuration.
+
+Example:
+
+```bash
+curl -H "X-Password: changeme" http://localhost:5000/api/jobs
 ```
