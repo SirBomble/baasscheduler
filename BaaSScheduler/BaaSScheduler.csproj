@@ -14,4 +14,11 @@
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.0" />
     <PackageReference Include="NCrontab" Version="3.3.3" />
   </ItemGroup>
+
+  <!-- Embed web assets so the service can run without external files -->
+  <ItemGroup>
+    <EmbeddedResource Include="wwwroot\**" />
+    <!-- Prevent static files from being copied to publish directory -->
+    <Content Remove="wwwroot\**" />
+  </ItemGroup>
 </Project>
