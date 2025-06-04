@@ -74,8 +74,10 @@ Optional webhook URLs which receive a message whenever a job completes or fails.
 
 ## HTTP API
 
-* `GET /` – confirms the service is running
+* `GET /` – serves a simple web interface
 * `GET /api/jobs` – lists all configured jobs
+* `POST /api/jobs` – adds a new job at runtime
+* `GET /api/status` – reports last run status for each job
 
 Requests under `/api` must include the `X-Password` header with the password from configuration.
 

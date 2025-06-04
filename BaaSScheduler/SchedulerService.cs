@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Microsoft.Extensions.Options;
 using NCrontab;
+using System.Linq;
 
 namespace BaaSScheduler;
 
@@ -10,6 +11,7 @@ public class SchedulerService : BackgroundService
     private readonly SchedulerConfig _config;
     private readonly Dictionary<JobConfig, CrontabSchedule> _schedules = new();
     private readonly Dictionary<JobConfig, DateTime> _nextRuns = new();
+    private readonly Dictionary<JobConfig, JobStatus> _statuses = new();
 
     public SchedulerService(ILogger<SchedulerService> logger, IOptions<SchedulerConfig> options)
     {
@@ -20,6 +22,7 @@ public class SchedulerService : BackgroundService
             var schedule = CrontabSchedule.Parse(job.Schedule);
             _schedules[job] = schedule;
             _nextRuns[job] = schedule.GetNextOccurrence(DateTime.Now);
+            _statuses[job] = new JobStatus();
         }
     }
 
@@ -43,9 +46,11 @@ public class SchedulerService : BackgroundService
 
     private async Task RunJobAsync(JobConfig job, CancellationToken token)
     {
+        var status = _statuses[job];
         try
         {
             _logger.LogInformation("Starting job {Job}", job.Name);
+            status.LastRun = DateTime.Now;
             var psi = CreateProcessStartInfo(job);
             using var proc = Process.Start(psi);
             if (proc != null)
@@ -54,11 +59,15 @@ public class SchedulerService : BackgroundService
                 if (proc.ExitCode == 0)
                 {
                     _logger.LogInformation("Job {Job} succeeded", job.Name);
+                    status.Success = true;
+                    status.Message = "Success";
                     await SendWebhookAsync($"Job {job.Name} succeeded");
                 }
                 else
                 {
                     _logger.LogError("Job {Job} failed with exit code {Code}", job.Name, proc.ExitCode);
+                    status.Success = false;
+                    status.Message = $"Exit code {proc.ExitCode}";
                     await SendWebhookAsync($"Job {job.Name} failed with exit code {proc.ExitCode}");
                 }
             }
@@ -66,6 +75,8 @@ public class SchedulerService : BackgroundService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Job {Job} threw exception", job.Name);
+            status.Success = false;
+            status.Message = ex.Message;
             await SendWebhookAsync($"Job {job.Name} failed: {ex.Message}");
         }
     }
@@ -111,6 +122,26 @@ public class SchedulerService : BackgroundService
             var content = new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("content", message) });
             await client.PostAsync(_config.Webhooks.Discord, content);
         }
+    }
+
+    public IEnumerable<object> GetStatuses()
+    {
+        return _statuses.Select(kvp => new
+        {
+            kvp.Key.Name,
+            kvp.Value.LastRun,
+            kvp.Value.Success,
+            kvp.Value.Message
+        });
+    }
+
+    public void AddJob(JobConfig job)
+    {
+        _config.Jobs.Add(job);
+        var schedule = CrontabSchedule.Parse(job.Schedule);
+        _schedules[job] = schedule;
+        _nextRuns[job] = schedule.GetNextOccurrence(DateTime.Now);
+        _statuses[job] = new JobStatus();
     }
 }
 

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using BaaSScheduler;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Hosting.WindowsServices;
+using Microsoft.AspNetCore.StaticFiles;
 
 if (args.Contains("--install"))
 {
@@ -31,6 +32,9 @@ builder.WebHost.UseUrls($"http://{config.Web.Host}:{config.Web.Port}");
 
 var app = builder.Build();
 
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
 app.Use(async (context, next) =>
 {
     if (!context.Request.Path.StartsWithSegments("/api"))
@@ -47,7 +51,9 @@ app.Use(async (context, next) =>
     await next();
 });
 
-app.MapGet("/", () => "BAAS Scheduler running");
+app.MapGet("/", () => Results.Redirect("/index.html"));
 app.MapGet("/api/jobs", (IOptions<SchedulerConfig> cfg) => cfg.Value.Jobs.Select(j => new { j.Name, j.Schedule, j.Script }));
+app.MapGet("/api/status", (SchedulerService svc) => svc.GetStatuses());
+app.MapPost("/api/jobs", (JobConfig job, SchedulerService svc) => { svc.AddJob(job); return Results.Ok(); });
 
 app.Run();

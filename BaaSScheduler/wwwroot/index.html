@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>BaaS Scheduler</title>
+<style>
+body { font-family: Arial, sans-serif; margin: 2em; }
+table { border-collapse: collapse; }
+th, td { border: 1px solid #ccc; padding: 4px 8px; }
+</style>
+</head>
+<body>
+<h1>BaaS Scheduler</h1>
+<section>
+<h2>Configured Jobs</h2>
+<table id="jobs">
+<thead><tr><th>Name</th><th>Schedule</th><th>Script</th></tr></thead>
+<tbody></tbody>
+</table>
+</section>
+<section>
+<h2>Job Status</h2>
+<table id="status">
+<thead><tr><th>Name</th><th>Last Run</th><th>Success</th><th>Message</th></tr></thead>
+<tbody></tbody>
+</table>
+</section>
+<section>
+<h2>Add Job</h2>
+<form id="addForm">
+<label>Name <input name="name" required></label><br>
+<label>Schedule <input name="schedule" required></label><br>
+<label>Script <input name="script" required></label><br>
+<label>Type <input name="type" value="powershell"></label><br>
+<label>Password <input name="password" value="changeme"></label><br>
+<button>Add</button>
+</form>
+</section>
+<script>
+async function loadJobs(pw) {
+ const res = await fetch('/api/jobs', { headers: {'X-Password': pw} });
+ const data = await res.json();
+ const tbody = document.querySelector('#jobs tbody');
+ tbody.innerHTML = '';
+ data.forEach(j => {
+   const tr = document.createElement('tr');
+   tr.innerHTML = `<td>${j.name}</td><td>${j.schedule}</td><td>${j.script}</td>`;
+   tbody.appendChild(tr);
+ });
+}
+async function loadStatus(pw) {
+ const res = await fetch('/api/status', { headers: {'X-Password': pw} });
+ const data = await res.json();
+ const tbody = document.querySelector('#status tbody');
+ tbody.innerHTML = '';
+ data.forEach(s => {
+   const tr = document.createElement('tr');
+   tr.innerHTML = `<td>${s.name}</td><td>${s.lastRun ?? ''}</td><td>${s.success ?? ''}</td><td>${s.message ?? ''}</td>`;
+   tbody.appendChild(tr);
+ });
+}
+const form = document.getElementById('addForm');
+form.addEventListener('submit', async e => {
+ e.preventDefault();
+ const fd = new FormData(form);
+ const job = {
+   Name: fd.get('name'),
+   Schedule: fd.get('schedule'),
+   Script: fd.get('script'),
+   Type: fd.get('type')
+ };
+ const pw = fd.get('password');
+ await fetch('/api/jobs', {
+   method: 'POST',
+   headers: {'Content-Type':'application/json', 'X-Password': pw},
+   body: JSON.stringify(job)
+ });
+ await loadJobs(pw);
+});
+loadJobs('changeme');
+loadStatus('changeme');
+</script>
+</body>
+</html>
