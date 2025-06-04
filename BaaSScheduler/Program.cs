@@ -57,8 +57,7 @@ var config = builder.Configuration.Get<SchedulerConfig>() ?? new SchedulerConfig
 builder.WebHost.UseUrls($"http://{config.Web.Host}:{config.Web.Port}");
 
 var app = builder.Build();
-
-var embeddedProvider = new ManifestEmbeddedFileProvider(Assembly.GetExecutingAssembly(), "wwwroot");
+var embeddedProvider = new EmbeddedFileProvider(Assembly.GetExecutingAssembly(), "");
 
 app.UseDefaultFiles();
 app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = embeddedProvider });
