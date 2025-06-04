@@ -15,6 +15,10 @@ To create a self-contained executable run:
 dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true
 ```
 
+During development you can simply run the project with `dotnet run`.  The
+project no longer hard codes a Windows runtime identifier so it executes on
+any platform with the .NET SDK installed.
+
 The output will be placed under `bin/Release/net8.0/win-x64/publish`.
 
 ## Running
@@ -40,6 +44,10 @@ BAASScheduler.exe --console
 ## Configuration
 
 All runtime settings are stored in `appsettings.json`.
+An example configuration is provided in `examples/appsettings.example.json`
+along with simple test scripts under `examples/scripts`.  Copy the example
+file to `appsettings.json` and adjust the script paths to quickly try the
+scheduler.
 
 ### Jobs
 Each entry in `Jobs` defines a scheduled task:
@@ -49,7 +57,11 @@ Each entry in `Jobs` defines a scheduled task:
   "Name": "Sample",
   "Schedule": "*/5 * * * *",
   "Script": "C:/scripts/test.ps1",
-  "Type": "powershell"
+  "Type": "powershell",
+  "Webhooks": {
+    "Teams": "",
+    "Discord": ""
+  }
 }
 ```
 
@@ -63,7 +75,8 @@ Each entry in `Jobs` defines a scheduled task:
 * `Password` - password required by the API
 
 ### Webhooks
-Optional webhook URLs which receive a message whenever a job completes or fails.
+Global webhook URLs notified when any job finishes. Individual jobs may override
+these values with their own `Webhooks` object.
 
 ```json
 "Webhooks": {

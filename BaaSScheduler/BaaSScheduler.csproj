@@ -5,9 +5,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>dotnet-BaaSScheduler-c87029f8-4e42-4bd7-8f1f-d27adc11d8fa</UserSecretsId>
-    <PublishSingleFile>true</PublishSingleFile>
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <SelfContained>true</SelfContained>
+    <!-- Publishing properties are specified at publish time so the project can
+         run cross-platform during development -->
   </PropertyGroup>
 
   <ItemGroup>

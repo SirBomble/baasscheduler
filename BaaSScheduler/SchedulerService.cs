@@ -61,14 +61,14 @@ public class SchedulerService : BackgroundService
                     _logger.LogInformation("Job {Job} succeeded", job.Name);
                     status.Success = true;
                     status.Message = "Success";
-                    await SendWebhookAsync($"Job {job.Name} succeeded");
+                    await SendWebhookAsync(job, $"Job {job.Name} succeeded");
                 }
                 else
                 {
                     _logger.LogError("Job {Job} failed with exit code {Code}", job.Name, proc.ExitCode);
                     status.Success = false;
                     status.Message = $"Exit code {proc.ExitCode}";
-                    await SendWebhookAsync($"Job {job.Name} failed with exit code {proc.ExitCode}");
+                    await SendWebhookAsync(job, $"Job {job.Name} failed with exit code {proc.ExitCode}");
                 }
             }
         }
@@ -77,7 +77,7 @@ public class SchedulerService : BackgroundService
             _logger.LogError(ex, "Job {Job} threw exception", job.Name);
             status.Success = false;
             status.Message = ex.Message;
-            await SendWebhookAsync($"Job {job.Name} failed: {ex.Message}");
+            await SendWebhookAsync(job, $"Job {job.Name} failed: {ex.Message}");
         }
     }
 
@@ -109,18 +109,25 @@ public class SchedulerService : BackgroundService
         return psi;
     }
 
-    private async Task SendWebhookAsync(string message)
+    private async Task SendWebhookAsync(JobConfig job, string message)
     {
         using var client = new HttpClient();
-        if (!string.IsNullOrWhiteSpace(_config.Webhooks.Teams))
+        var teamsUrl = string.IsNullOrWhiteSpace(job.Webhooks?.Teams)
+            ? _config.Webhooks.Teams
+            : job.Webhooks!.Teams;
+        if (!string.IsNullOrWhiteSpace(teamsUrl))
         {
-            var content = new StringContent("{\"text\": \"" + message.Replace("\"","\\\"") + "\"}", System.Text.Encoding.UTF8, "application/json");
-            await client.PostAsync(_config.Webhooks.Teams, content);
+            var content = new StringContent("{\"text\": \"" + message.Replace("\"", "\\\"") + "\"}", System.Text.Encoding.UTF8, "application/json");
+            await client.PostAsync(teamsUrl, content);
         }
-        if (!string.IsNullOrWhiteSpace(_config.Webhooks.Discord))
+
+        var discordUrl = string.IsNullOrWhiteSpace(job.Webhooks?.Discord)
+            ? _config.Webhooks.Discord
+            : job.Webhooks!.Discord;
+        if (!string.IsNullOrWhiteSpace(discordUrl))
         {
             var content = new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("content", message) });
-            await client.PostAsync(_config.Webhooks.Discord, content);
+            await client.PostAsync(discordUrl, content);
         }
     }
 
