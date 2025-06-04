@@ -50,7 +50,8 @@ builder.Host.UseWindowsService();
 builder.Configuration.AddJsonFile(configFile, optional: true);
 
 builder.Services.Configure<SchedulerConfig>(builder.Configuration);
-builder.Services.AddHostedService<SchedulerService>();
+builder.Services.AddSingleton<SchedulerService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<SchedulerService>());
 
 var config = builder.Configuration.Get<SchedulerConfig>() ?? new SchedulerConfig();
 
@@ -59,9 +60,13 @@ builder.WebHost.UseUrls($"http://{config.Web.Host}:{config.Web.Port}");
 var app = builder.Build();
 var embeddedProvider = new EmbeddedFileProvider(Assembly.GetExecutingAssembly(), "");
 
-app.UseDefaultFiles();
+if (Directory.Exists(app.Environment.WebRootPath))
+{
+    app.UseDefaultFiles();
+    app.UseStaticFiles();
+}
+
 app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = embeddedProvider });
-app.UseStaticFiles();
 app.UseStaticFiles(new StaticFileOptions { FileProvider = embeddedProvider });
 
 app.Use(async (context, next) =>
