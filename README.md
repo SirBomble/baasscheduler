@@ -15,6 +15,10 @@ To create a self-contained executable run:
 dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true
 ```
 
+During development you can simply run the project with `dotnet run`.  The
+project no longer hard codes a Windows runtime identifier so it executes on
+any platform with the .NET SDK installed.
+
 The output will be placed under `bin/Release/net8.0/win-x64/publish`.
 
 ## Running

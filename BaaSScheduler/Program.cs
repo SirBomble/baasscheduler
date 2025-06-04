@@ -3,6 +3,7 @@ using BaaSScheduler;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Hosting.WindowsServices;
 using Microsoft.AspNetCore.StaticFiles;
+using Microsoft.AspNetCore.Mvc;
 
 if (args.Contains("--install"))
 {
@@ -52,8 +53,13 @@ app.Use(async (context, next) =>
 });
 
 app.MapGet("/", () => Results.Redirect("/index.html"));
-app.MapGet("/api/jobs", (IOptions<SchedulerConfig> cfg) => cfg.Value.Jobs.Select(j => new { j.Name, j.Schedule, j.Script }));
-app.MapGet("/api/status", (SchedulerService svc) => svc.GetStatuses());
-app.MapPost("/api/jobs", (JobConfig job, SchedulerService svc) => { svc.AddJob(job); return Results.Ok(); });
+app.MapGet("/api/jobs", ([FromServices] IOptions<SchedulerConfig> cfg) =>
+    cfg.Value.Jobs.Select(j => new { j.Name, j.Schedule, j.Script }));
+app.MapGet("/api/status", ([FromServices] SchedulerService svc) => svc.GetStatuses());
+app.MapPost("/api/jobs", ([FromBody] JobConfig job, [FromServices] SchedulerService svc) =>
+{
+    svc.AddJob(job);
+    return Results.Ok();
+});
 
 app.Run();
