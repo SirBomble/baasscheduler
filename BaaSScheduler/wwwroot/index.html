@@ -11,84 +11,93 @@ th, td { border: 1px solid #ccc; padding: 4px 8px; }
 </head>
 <body>
 <h1>BaaS Scheduler</h1>
-<section id="loginSection">
-<h2>Login</h2>
-<form id="loginForm">
-<label>Password <input id="loginPassword" type="password" required></label>
-<button>Connect</button>
-</form>
-</section>
-<section id="content" style="display:none">
-<h2>Configured Jobs</h2>
-<table id="jobs">
-<thead><tr><th>Name</th><th>Schedule</th><th>Script</th></tr></thead>
-<tbody></tbody>
-</table>
-<h2>Job Status</h2>
-<table id="status">
-<thead><tr><th>Name</th><th>Last Run</th><th>Success</th><th>Message</th></tr></thead>
-<tbody></tbody>
-</table>
-<h2>Add Job</h2>
-<form id="addForm">
-<label>Name <input name="name" required></label><br>
-<label>Schedule <input name="schedule" required></label><br>
-<label>Script <input name="script" required></label><br>
-<label>Type <input name="type" value="powershell"></label><br>
-<button>Add</button>
-</form>
-</section>
+<div id="app">
+  <section v-if="!authenticated">
+    <h2>Login</h2>
+    <form @submit.prevent="login">
+      <label>Password <input v-model="password" type="password" required></label>
+      <button>Connect</button>
+    </form>
+  </section>
+  <section v-else>
+    <h2>Configured Jobs</h2>
+    <table>
+      <thead><tr><th>Name</th><th>Schedule</th><th>Script</th></tr></thead>
+      <tbody>
+        <tr v-for="j in jobs" :key="j.name">
+          <td>{{ j.name }}</td>
+          <td>{{ j.schedule }}</td>
+          <td>{{ j.script }}</td>
+        </tr>
+      </tbody>
+    </table>
+    <h2>Job Status</h2>
+    <table>
+      <thead><tr><th>Name</th><th>Last Run</th><th>Success</th><th>Message</th></tr></thead>
+      <tbody>
+        <tr v-for="s in status" :key="s.name">
+          <td>{{ s.name }}</td>
+          <td>{{ s.lastRun }}</td>
+          <td>{{ s.success }}</td>
+          <td>{{ s.message }}</td>
+        </tr>
+      </tbody>
+    </table>
+    <h2>Add Job</h2>
+    <form @submit.prevent="addJob">
+      <label>Name <input v-model="newJob.Name" required></label><br>
+      <label>Schedule <input v-model="newJob.Schedule" required></label><br>
+      <label>Script <input v-model="newJob.Script" required></label><br>
+      <label>Type <input v-model="newJob.Type"></label><br>
+      <button>Add</button>
+    </form>
+  </section>
+</div>
+<script src="/vue.global.prod.js"></script>
 <script>
-let password = '';
-async function loadJobs() {
- const res = await fetch('/api/jobs', { headers: {'X-Password': password} });
- const data = await res.json();
- const tbody = document.querySelector('#jobs tbody');
- tbody.innerHTML = '';
- data.forEach(j => {
-   const tr = document.createElement('tr');
-   tr.innerHTML = `<td>${j.name}</td><td>${j.schedule}</td><td>${j.script}</td>`;
-   tbody.appendChild(tr);
- });
-}
-async function loadStatus() {
- const res = await fetch('/api/status', { headers: {'X-Password': password} });
- const data = await res.json();
- const tbody = document.querySelector('#status tbody');
- tbody.innerHTML = '';
- data.forEach(s => {
-   const tr = document.createElement('tr');
-   tr.innerHTML = `<td>${s.name}</td><td>${s.lastRun ?? ''}</td><td>${s.success ?? ''}</td><td>${s.message ?? ''}</td>`;
-   tbody.appendChild(tr);
- });
-}
-const loginForm = document.getElementById('loginForm');
-loginForm.addEventListener('submit', async e => {
- e.preventDefault();
- password = document.getElementById('loginPassword').value;
- await loadJobs();
- await loadStatus();
- document.getElementById('content').style.display = '';
- document.getElementById('loginSection').style.display = 'none';
-});
-
-const form = document.getElementById('addForm');
-form.addEventListener('submit', async e => {
- e.preventDefault();
- const fd = new FormData(form);
- const job = {
-   Name: fd.get('name'),
-   Schedule: fd.get('schedule'),
-   Script: fd.get('script'),
-   Type: fd.get('type')
- };
- await fetch('/api/jobs', {
-   method: 'POST',
-   headers: {'Content-Type':'application/json', 'X-Password': password},
-   body: JSON.stringify(job)
- });
- await loadJobs();
-});
+const { createApp } = Vue;
+createApp({
+  data() {
+    return {
+      password: '',
+      authenticated: false,
+      jobs: [],
+      status: [],
+      newJob: { Name:'', Schedule:'', Script:'', Type:'powershell' }
+    };
+  },
+  methods: {
+    async login() {
+      await this.loadJobs();
+      await this.loadStatus();
+      this.authenticated = true;
+    },
+    async loadJobs() {
+      const res = await fetch('/api/jobs', {
+        headers: { 'X-Password': this.password }
+      });
+      this.jobs = await res.json();
+    },
+    async loadStatus() {
+      const res = await fetch('/api/status', {
+        headers: { 'X-Password': this.password }
+      });
+      this.status = await res.json();
+    },
+    async addJob() {
+      await fetch('/api/jobs', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Password': this.password
+        },
+        body: JSON.stringify(this.newJob)
+      });
+      this.newJob = { Name:'', Schedule:'', Script:'', Type:'powershell' };
+      await this.loadJobs();
+    }
+  }
+}).mount('#app');
 </script>
 </body>
 </html>
