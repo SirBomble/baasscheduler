@@ -53,7 +53,11 @@ Each entry in `Jobs` defines a scheduled task:
   "Name": "Sample",
   "Schedule": "*/5 * * * *",
   "Script": "C:/scripts/test.ps1",
-  "Type": "powershell"
+  "Type": "powershell",
+  "Webhooks": {
+    "Teams": "",
+    "Discord": ""
+  }
 }
 ```
 
@@ -67,7 +71,8 @@ Each entry in `Jobs` defines a scheduled task:
 * `Password` - password required by the API
 
 ### Webhooks
-Optional webhook URLs which receive a message whenever a job completes or fails.
+Global webhook URLs notified when any job finishes. Individual jobs may override
+these values with their own `Webhooks` object.
 
 ```json
 "Webhooks": {

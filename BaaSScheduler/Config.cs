@@ -13,6 +13,7 @@ public class JobConfig
     public string Schedule { get; set; } = string.Empty; // cron expression
     public string Script { get; set; } = string.Empty; // path to script
     public string Type { get; set; } = string.Empty; // powershell, bat, exe
+    public WebhookConfig Webhooks { get; set; } = new();
 }
 
 public class WebConfig
