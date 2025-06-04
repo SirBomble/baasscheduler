@@ -11,34 +11,37 @@ th, td { border: 1px solid #ccc; padding: 4px 8px; }
 </head>
 <body>
 <h1>BaaS Scheduler</h1>
-<section>
+<section id="loginSection">
+<h2>Login</h2>
+<form id="loginForm">
+<label>Password <input id="loginPassword" type="password" required></label>
+<button>Connect</button>
+</form>
+</section>
+<section id="content" style="display:none">
 <h2>Configured Jobs</h2>
 <table id="jobs">
 <thead><tr><th>Name</th><th>Schedule</th><th>Script</th></tr></thead>
 <tbody></tbody>
 </table>
-</section>
-<section>
 <h2>Job Status</h2>
 <table id="status">
 <thead><tr><th>Name</th><th>Last Run</th><th>Success</th><th>Message</th></tr></thead>
 <tbody></tbody>
 </table>
-</section>
-<section>
 <h2>Add Job</h2>
 <form id="addForm">
 <label>Name <input name="name" required></label><br>
 <label>Schedule <input name="schedule" required></label><br>
 <label>Script <input name="script" required></label><br>
 <label>Type <input name="type" value="powershell"></label><br>
-<label>Password <input name="password" value="changeme"></label><br>
 <button>Add</button>
 </form>
 </section>
 <script>
-async function loadJobs(pw) {
- const res = await fetch('/api/jobs', { headers: {'X-Password': pw} });
+let password = '';
+async function loadJobs() {
+ const res = await fetch('/api/jobs', { headers: {'X-Password': password} });
  const data = await res.json();
  const tbody = document.querySelector('#jobs tbody');
  tbody.innerHTML = '';
@@ -48,8 +51,8 @@ async function loadJobs(pw) {
    tbody.appendChild(tr);
  });
 }
-async function loadStatus(pw) {
- const res = await fetch('/api/status', { headers: {'X-Password': pw} });
+async function loadStatus() {
+ const res = await fetch('/api/status', { headers: {'X-Password': password} });
  const data = await res.json();
  const tbody = document.querySelector('#status tbody');
  tbody.innerHTML = '';
@@ -59,6 +62,16 @@ async function loadStatus(pw) {
    tbody.appendChild(tr);
  });
 }
+const loginForm = document.getElementById('loginForm');
+loginForm.addEventListener('submit', async e => {
+ e.preventDefault();
+ password = document.getElementById('loginPassword').value;
+ await loadJobs();
+ await loadStatus();
+ document.getElementById('content').style.display = '';
+ document.getElementById('loginSection').style.display = 'none';
+});
+
 const form = document.getElementById('addForm');
 form.addEventListener('submit', async e => {
  e.preventDefault();
@@ -69,16 +82,13 @@ form.addEventListener('submit', async e => {
    Script: fd.get('script'),
    Type: fd.get('type')
  };
- const pw = fd.get('password');
  await fetch('/api/jobs', {
    method: 'POST',
-   headers: {'Content-Type':'application/json', 'X-Password': pw},
+   headers: {'Content-Type':'application/json', 'X-Password': password},
    body: JSON.stringify(job)
  });
- await loadJobs(pw);
+ await loadJobs();
 });
-loadJobs('changeme');
-loadStatus('changeme');
 </script>
 </body>
 </html>
