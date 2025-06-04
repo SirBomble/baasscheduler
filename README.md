@@ -29,6 +29,12 @@ From the publish directory you can install the service:
 BAASScheduler.exe --install
 ```
 
+You may specify an alternate configuration file:
+
+```bash
+BAASScheduler.exe --install --config C:\path\to\appsettings.json
+```
+
 Uninstall with:
 
 ```bash
@@ -44,6 +50,8 @@ BAASScheduler.exe --console
 ## Configuration
 
 All runtime settings are stored in `appsettings.json`.
+The file is looked up relative to the executable by default but you can pass a
+custom path with `--config <file>` when running or installing the service.
 An example configuration is provided in `examples/appsettings.example.json`
 along with simple test scripts under `examples/scripts`.  Copy the example
 file to `appsettings.json` and adjust the script paths to quickly try the

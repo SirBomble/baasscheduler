@@ -5,10 +5,33 @@ using Microsoft.Extensions.Hosting.WindowsServices;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.AspNetCore.Mvc;
 
+// optional configuration file parameter
+string configFile = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+var configArgIndex = Array.IndexOf(args, "--config");
+if (configArgIndex >= 0 && args.Length > configArgIndex + 1)
+{
+    configFile = args[configArgIndex + 1];
+}
+else
+{
+    const string prefix = "--config=";
+    var match = args.FirstOrDefault(a => a.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+    if (match != null)
+    {
+        configFile = match.Substring(prefix.Length);
+    }
+}
+
 if (args.Contains("--install"))
 {
     var exe = Process.GetCurrentProcess().MainModule!.FileName!;
-    Process.Start("sc.exe", $"create BAASScheduler binPath= \"{exe}\" start= auto");
+    // include config file argument when installing if specified
+    var binPath = $"\"{exe}\"";
+    if (configArgIndex >= 0 || args.Any(a => a.StartsWith("--config=")))
+    {
+        binPath += $" --config \"{configFile}\"";
+    }
+    Process.Start("sc.exe", $"create BAASScheduler binPath= {binPath} start= auto");
     return;
 }
 if (args.Contains("--uninstall"))
@@ -22,7 +45,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseWindowsService();
 
-builder.Configuration.AddJsonFile("appsettings.json", optional: true);
+builder.Configuration.AddJsonFile(configFile, optional: true);
 
 builder.Services.Configure<SchedulerConfig>(builder.Configuration);
 builder.Services.AddHostedService<SchedulerService>();
