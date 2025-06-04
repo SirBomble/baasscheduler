@@ -19,8 +19,6 @@
 
   <!-- Embed web assets so the service can run without external files -->
   <ItemGroup>
-    <!-- Preserve file paths in the manifest so the web host can find them -->
-    <!-- Embed static files without the wwwroot prefix so they serve from root -->
     <EmbeddedResource Include="wwwroot\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />
     <!-- Prevent static files from being copied to publish directory -->
     <Content Remove="wwwroot\**" />
