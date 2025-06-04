@@ -40,6 +40,10 @@ BAASScheduler.exe --console
 ## Configuration
 
 All runtime settings are stored in `appsettings.json`.
+An example configuration is provided in `examples/appsettings.example.json`
+along with simple test scripts under `examples/scripts`.  Copy the example
+file to `appsettings.json` and adjust the script paths to quickly try the
+scheduler.
 
 ### Jobs
 Each entry in `Jobs` defines a scheduled task:
