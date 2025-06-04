@@ -3,6 +3,8 @@ using BaaSScheduler;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Hosting.WindowsServices;
 using Microsoft.AspNetCore.StaticFiles;
+using Microsoft.Extensions.FileProviders;
+using System.Reflection;
 using Microsoft.AspNetCore.Mvc;
 
 // optional configuration file parameter
@@ -56,8 +58,12 @@ builder.WebHost.UseUrls($"http://{config.Web.Host}:{config.Web.Port}");
 
 var app = builder.Build();
 
+var embeddedProvider = new EmbeddedFileProvider(Assembly.GetExecutingAssembly(), "");
+
 app.UseDefaultFiles();
+app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = embeddedProvider });
 app.UseStaticFiles();
+app.UseStaticFiles(new StaticFileOptions { FileProvider = embeddedProvider });
 
 app.Use(async (context, next) =>
 {

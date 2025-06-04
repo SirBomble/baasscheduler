@@ -4,6 +4,8 @@
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Generate a manifest of embedded resources so static files can be served -->
+    <GenerateEmbeddedFilesManifest>true</GenerateEmbeddedFilesManifest>
     <UserSecretsId>dotnet-BaaSScheduler-c87029f8-4e42-4bd7-8f1f-d27adc11d8fa</UserSecretsId>
     <!-- Publishing properties are specified at publish time so the project can
          run cross-platform during development -->
@@ -13,5 +15,14 @@
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.0" />
     <PackageReference Include="NCrontab" Version="3.3.3" />
+  </ItemGroup>
+
+  <!-- Embed web assets so the service can run without external files -->
+  <ItemGroup>
+    <!-- Preserve file paths in the manifest so the web host can find them -->
+    <!-- Embed static files without the wwwroot prefix so they serve from root -->
+    <EmbeddedResource Include="wwwroot\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />
+    <!-- Prevent static files from being copied to publish directory -->
+    <Content Remove="wwwroot\**" />
   </ItemGroup>
 </Project>
