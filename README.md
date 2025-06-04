@@ -95,7 +95,8 @@ these values with their own `Webhooks` object.
 
 ## HTTP API
 
-* `GET /` – serves a simple web interface
+* `GET /` – serves a small Vue-based web interface that is embedded in the
+  executable
 * `GET /api/jobs` – lists all configured jobs
 * `POST /api/jobs` – adds a new job at runtime
 * `GET /api/status` – reports last run status for each job
