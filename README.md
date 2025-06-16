@@ -1,6 +1,16 @@
 # BAAS Scheduler
 
-BAAS Scheduler is a small Windows service that executes scripted jobs according to cron expressions. Jobs and service settings are defined in `appsettings.json` and the application exposes a minimal HTTP API so you can inspect the configured jobs.
+BAAS Scheduler is a Windows service that executes scripted jobs according to cron expressions. It features a modern web interface with file browser capabilities, job run history tracking, and comprehensive filtering options.
+
+## Features
+
+- **Job Scheduling**: Execute PowerShell scripts, batch files, and executables using cron expressions
+- **Web Interface**: Modern, responsive web UI for managing jobs and monitoring status
+- **File Browser**: Built-in file picker for selecting script files
+- **Run History**: Track job execution history with detailed logs and filtering
+- **Job Filtering**: Filter jobs by name, status, and type
+- **Webhook Support**: Teams and Discord webhook notifications
+- **Real-time Monitoring**: Live job status updates and execution logs
 
 ## Requirements
 
@@ -107,18 +117,60 @@ The service automatically reloads the configuration when `appsettings.json` is m
 Jobs are updated without requiring a service restart. Existing job execution status
 is preserved across configuration reloads.
 
+## Web Interface
+
+The BaaS Scheduler includes a modern web interface accessible at `http://localhost:5000` (or your configured host/port).
+
+### Features:
+- **Dashboard**: Overview of jobs, execution statistics, and system status
+- **Job Management**: Create, edit, enable/disable, and delete jobs
+- **File Browser**: Built-in file picker to easily select script files
+- **Job Filtering**: Filter jobs by name, status (enabled/disabled), and type
+- **Run History**: View detailed execution history for all jobs with filtering by:
+  - Specific job
+  - Success/failure status
+  - Date range
+- **Execution Logs**: View detailed output logs for each job run
+- **Real-time Updates**: Live status updates every 30 seconds
+
+### Authentication:
+The web interface requires password authentication using the password configured in `appsettings.json`. Sessions are valid for 1 hour.
+
 ## HTTP API
 
-* `GET /` – serves a small Vue-based web interface that is embedded in the
-  executable
+The service exposes a REST API for integration with other systems:
+
+### Authentication
+* `POST /api/auth/login` – authenticate with password
+* `POST /api/auth/logout` – invalidate session
+
+### Job Management  
 * `GET /api/jobs` – lists all configured jobs
 * `POST /api/jobs` – adds a new job at runtime
-* `GET /api/status` – reports last run status for each job
+* `PUT /api/jobs/{jobName}` – updates an existing job
+* `DELETE /api/jobs/{jobName}` – removes a job
+* `PATCH /api/jobs/{jobName}/toggle` – enables/disables a job
 
-Requests under `/api` must include the `X-Password` header with the password from configuration.
+### Job Status & History
+* `GET /api/status` – get current status of all jobs
+* `GET /api/jobs/{jobName}/history` – get execution history for a specific job
+
+### File Browser (for web interface)
+* `GET /api/files/browse?path={path}` – browse files and directories
+* `GET /api/files/drives` – list available drives
+
+### Authentication
+All API requests (except `/api/auth/login`) must include the `X-Session-Id` header with a valid session ID obtained from login.
 
 Example:
 
 ```bash
-curl -H "X-Password: changeme" http://localhost:5000/api/jobs
+# Login and get session ID
+curl -X POST -H "Content-Type: application/json" \
+  -d '{"password":"changeme"}' \
+  http://localhost:5000/api/auth/login
+
+# Use session ID for subsequent requests
+curl -H "X-Session-Id: your-session-id" \
+  http://localhost:5000/api/jobs
 ```

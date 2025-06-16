@@ -142,17 +142,52 @@
                             </div>
                         </div>
                     </div>
-                </div>
-
-                <!-- Actions Bar -->
-                <div class="mb-6 flex justify-between items-center">
-                    <h2 class="text-xl font-semibold text-gray-900">Job Management</h2>
-                    <button 
-                        @click="showJobModal = true; editingJob = null; resetJobForm()"
-                        class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium"
-                    >
-                        <i class="fas fa-plus mr-2"></i>Add Job
-                    </button>
+                </div>                <!-- Actions Bar -->
+                <div class="mb-6 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+                    <div>
+                        <h2 class="text-xl font-semibold text-gray-900">Job Management</h2>
+                        <!-- Filter Controls -->
+                        <div class="mt-2 flex flex-wrap gap-2">
+                            <select v-model="jobFilter.status" class="text-sm border border-gray-300 rounded-md px-2 py-1">
+                                <option value="">All Status</option>
+                                <option value="enabled">Enabled</option>
+                                <option value="disabled">Disabled</option>
+                            </select>
+                            <select v-model="jobFilter.type" class="text-sm border border-gray-300 rounded-md px-2 py-1">
+                                <option value="">All Types</option>
+                                <option value="powershell">PowerShell</option>
+                                <option value="bat">Batch</option>
+                                <option value="exe">Executable</option>
+                            </select>
+                            <input 
+                                v-model="jobFilter.name" 
+                                type="text" 
+                                placeholder="Filter by name..."
+                                class="text-sm border border-gray-300 rounded-md px-2 py-1"
+                            >
+                            <button 
+                                @click="clearFilters"
+                                v-if="hasActiveFilters"
+                                class="text-sm bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-1 rounded-md"
+                            >
+                                Clear Filters
+                            </button>
+                        </div>
+                    </div>
+                    <div class="flex gap-2">
+                        <button 
+                            @click="showHistoryModal = true"
+                            class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium"
+                        >
+                            <i class="fas fa-history mr-2"></i>Run History
+                        </button>
+                        <button 
+                            @click="showJobModal = true; editingJob = null; resetJobForm()"
+                            class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium"
+                        >
+                            <i class="fas fa-plus mr-2"></i>Add Job
+                        </button>
+                    </div>
                 </div>
 
                 <!-- Jobs Table -->
@@ -169,9 +204,8 @@
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                                         <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                                     </tr>
-                                </thead>
-                                <tbody class="bg-white divide-y divide-gray-200">
-                                    <tr v-for="job in jobs" :key="job.name">
+                                </thead>                                <tbody class="bg-white divide-y divide-gray-200">
+                                    <tr v-for="job in filteredJobs" :key="job.name">
                                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ job.name }}</td>
                                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ job.schedule }}</td>
                                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ job.script }}</td>
@@ -301,16 +335,24 @@
                             >
                             <p class="text-xs text-gray-500 mt-1">Format: minute hour day month day-of-week</p>
                         </div>
-                        
-                        <div>
+                          <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Script Path</label>
-                            <input 
-                                v-model="jobForm.script" 
-                                type="text" 
-                                required 
-                                class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                                placeholder="C:\\Scripts\\my-script.ps1"
-                            >
+                            <div class="flex gap-2">
+                                <input 
+                                    v-model="jobForm.script" 
+                                    type="text" 
+                                    required 
+                                    class="flex-1 border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                    placeholder="C:\\Scripts\\my-script.ps1"
+                                >
+                                <button 
+                                    type="button"
+                                    @click="showFilePicker = true"
+                                    class="px-3 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500"
+                                >
+                                    <i class="fas fa-folder-open"></i>
+                                </button>
+                            </div>
                         </div>
                         
                         <div class="flex items-center">
@@ -374,10 +416,203 @@
                         </div>
                     </form>
                 </div>
+            </div>        </div>
+
+        <!-- File Picker Modal -->
+        <div v-if="showFilePicker" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+            <div class="relative top-10 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-2/3 xl:w-1/2 shadow-lg rounded-md bg-white max-h-[80vh] flex flex-col">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-medium text-gray-900">Select Script File</h3>
+                    <button 
+                        @click="showFilePicker = false"
+                        class="text-gray-400 hover:text-gray-600"
+                    >
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                
+                <!-- Current Path and Navigation -->
+                <div class="mb-4 flex items-center gap-2">
+                    <button 
+                        @click="browseDrives"
+                        class="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
+                    >
+                        <i class="fas fa-hdd mr-1"></i>Drives
+                    </button>
+                    <button 
+                        @click="browseParent"
+                        :disabled="!fileBrowser.parentPath"
+                        class="px-3 py-1 bg-gray-600 text-white rounded text-sm hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        <i class="fas fa-arrow-up mr-1"></i>Up
+                    </button>
+                    <div class="flex-1 text-sm text-gray-600 truncate">
+                        {{ fileBrowser.currentPath }}
+                    </div>
+                </div>
+                
+                <!-- File Browser -->
+                <div class="flex-1 overflow-y-auto border border-gray-200 rounded">
+                    <div v-if="fileBrowserLoading" class="p-4 text-center">
+                        <i class="fas fa-spinner fa-spin mr-2"></i>Loading...
+                    </div>
+                    <div v-else-if="fileBrowser.items.length === 0" class="p-4 text-center text-gray-500">
+                        No script files found in this directory
+                    </div>
+                    <div v-else>
+                        <div 
+                            v-for="item in fileBrowser.items" 
+                            :key="item.path"
+                            @click="selectFileItem(item)"
+                            @dblclick="openFileItem(item)"
+                            :class="{
+                                'bg-blue-50 border-blue-200': selectedFileItem?.path === item.path,
+                                'hover:bg-gray-50': selectedFileItem?.path !== item.path
+                            }"
+                            class="flex items-center px-4 py-2 border-b border-gray-100 cursor-pointer"
+                        >
+                            <i :class="{
+                                'fas fa-folder text-yellow-500': item.type === 'directory',
+                                'fas fa-hdd text-blue-500': item.type === 'drive',
+                                'fas fa-file-code text-green-500': item.extension === '.ps1',
+                                'fas fa-file text-gray-500': item.extension === '.bat' || item.extension === '.cmd',
+                                'fas fa-cog text-purple-500': item.extension === '.exe'
+                            }" class="mr-3"></i>
+                            <span class="flex-1 truncate">{{ item.name }}</span>
+                            <span v-if="item.type === 'drive' && item.label" class="text-xs text-gray-500 ml-2">{{ item.label }}</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Selected File -->
+                <div v-if="selectedFileItem && selectedFileItem.type === 'file'" class="mt-4 p-3 bg-gray-50 rounded">
+                    <div class="text-sm font-medium text-gray-700">Selected: {{ selectedFileItem.name }}</div>
+                    <div class="text-xs text-gray-500">{{ selectedFileItem.path }}</div>
+                </div>
+                
+                <div class="flex justify-end space-x-3 pt-4 border-t mt-4">
+                    <button 
+                        type="button" 
+                        @click="showFilePicker = false"
+                        class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
+                    >
+                        Cancel
+                    </button>
+                    <button 
+                        type="button" 
+                        @click="selectFile"
+                        :disabled="!selectedFileItem || selectedFileItem.type !== 'file'"
+                        class="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        Select File
+                    </button>
+                </div>
             </div>
         </div>
 
-        <!-- Output Log Modal -->
+        <!-- Run History Modal -->
+        <div v-if="showHistoryModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+            <div class="relative top-10 mx-auto p-5 border w-11/12 md:w-5/6 lg:w-4/5 xl:w-3/4 shadow-lg rounded-md bg-white max-h-[80vh] flex flex-col">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-medium text-gray-900">Job Run History</h3>
+                    <button 
+                        @click="showHistoryModal = false"
+                        class="text-gray-400 hover:text-gray-600"
+                    >
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                
+                <!-- History Filters -->
+                <div class="mb-4 flex flex-wrap gap-2">
+                    <select v-model="historyFilter.job" class="text-sm border border-gray-300 rounded-md px-2 py-1">
+                        <option value="">All Jobs</option>
+                        <option v-for="job in jobs" :key="job.name" :value="job.name">{{ job.name }}</option>
+                    </select>
+                    <select v-model="historyFilter.result" class="text-sm border border-gray-300 rounded-md px-2 py-1">
+                        <option value="">All Results</option>
+                        <option value="success">Success</option>
+                        <option value="failed">Failed</option>
+                    </select>
+                    <input 
+                        v-model="historyFilter.dateFrom" 
+                        type="date" 
+                        class="text-sm border border-gray-300 rounded-md px-2 py-1"
+                        placeholder="From date"
+                    >
+                    <input 
+                        v-model="historyFilter.dateTo" 
+                        type="date" 
+                        class="text-sm border border-gray-300 rounded-md px-2 py-1"
+                        placeholder="To date"
+                    >
+                    <button 
+                        @click="loadJobHistory"
+                        class="text-sm bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-md"
+                    >
+                        <i class="fas fa-search mr-1"></i>Filter
+                    </button>
+                </div>
+                
+                <!-- History Table -->
+                <div class="flex-1 overflow-auto">
+                    <div v-if="historyLoading" class="p-4 text-center">
+                        <i class="fas fa-spinner fa-spin mr-2"></i>Loading history...
+                    </div>
+                    <div v-else-if="jobHistory.length === 0" class="p-4 text-center text-gray-500">
+                        No history available for the selected criteria
+                    </div>
+                    <table v-else class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Job</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Start Time</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duration</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Result</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Message</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            <tr v-for="run in filteredJobHistory" :key="`${run.jobName}-${run.startTime}`" class="hover:bg-gray-50">
+                                <td class="px-4 py-3 text-sm font-medium text-gray-900">{{ run.jobName }}</td>
+                                <td class="px-4 py-3 text-sm text-gray-500">{{ formatDate(run.startTime) }}</td>
+                                <td class="px-4 py-3 text-sm text-gray-500">{{ formatDuration(run.duration) }}</td>
+                                <td class="px-4 py-3">
+                                    <span :class="run.success ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'" 
+                                          class="inline-flex px-2 py-1 text-xs font-semibold rounded-full">
+                                        <i :class="run.success ? 'fas fa-check-circle' : 'fas fa-times-circle'" class="mr-1"></i>
+                                        {{ run.success ? 'Success' : 'Failed' }}
+                                    </span>
+                                </td>
+                                <td class="px-4 py-3 text-sm text-gray-500 max-w-xs truncate">{{ run.message }}</td>
+                                <td class="px-4 py-3 text-sm font-medium">
+                                    <button 
+                                        @click="showHistoryOutputLog(run)" 
+                                        class="text-blue-600 hover:text-blue-900 font-medium"
+                                        :disabled="!run.outputLog"
+                                        :class="{'opacity-50 cursor-not-allowed': !run.outputLog}"
+                                    >
+                                        <i class="fas fa-file-alt"></i> View Log
+                                    </button>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div class="flex justify-end pt-4 border-t mt-4">
+                    <button 
+                        @click="showHistoryModal = false"
+                        class="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700"
+                    >
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Output Log Modal (enhanced for history) -->
         <div v-if="showOutputModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
             <div class="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-2/3 xl:w-1/2 shadow-lg rounded-md bg-white">
                 <div class="mt-3">
@@ -452,8 +687,7 @@
 
     <script src="/vue.global.prod.js"></script>
     <script>
-const { createApp } = Vue;
-        createApp({
+const { createApp } = Vue;        createApp({
             data() {
                 return {
                     password: '',
@@ -468,10 +702,38 @@ const { createApp } = Vue;
                     editingJob: null,
                     jobForm: this.getEmptyJobForm(),
                     showOutputModal: false,
-                    selectedStatus: null
+                    selectedStatus: null,
+                    
+                    // File picker
+                    showFilePicker: false,
+                    fileBrowser: {
+                        currentPath: '',
+                        parentPath: null,
+                        items: []
+                    },
+                    selectedFileItem: null,
+                    fileBrowserLoading: false,
+                    
+                    // Job filtering
+                    jobFilter: {
+                        name: '',
+                        status: '',
+                        type: ''
+                    },
+                    
+                    // Run history
+                    showHistoryModal: false,
+                    jobHistory: [],
+                    historyLoading: false,
+                    historyFilter: {
+                        job: '',
+                        result: '',
+                        dateFrom: '',
+                        dateTo: ''
+                    },
+                    selectedHistoryRun: null
                 };
-            },
-            computed: {
+            },            computed: {
                 enabledJobs() {
                     return this.jobs.filter(j => j.enabled).length;
                 },
@@ -490,6 +752,41 @@ const { createApp } = Vue;
                     const minutes = Math.floor(remaining / 60000);
                     const seconds = Math.floor((remaining % 60000) / 1000);
                     return `${minutes}m ${seconds}s`;
+                },
+                filteredJobs() {
+                    return this.jobs.filter(job => {
+                        const nameMatch = !this.jobFilter.name || 
+                            job.name.toLowerCase().includes(this.jobFilter.name.toLowerCase());
+                        const statusMatch = !this.jobFilter.status || 
+                            (this.jobFilter.status === 'enabled' ? job.enabled : !job.enabled);
+                        const typeMatch = !this.jobFilter.type || 
+                            job.type.toLowerCase() === this.jobFilter.type.toLowerCase();
+                        
+                        return nameMatch && statusMatch && typeMatch;
+                    });
+                },
+                hasActiveFilters() {
+                    return this.jobFilter.name || this.jobFilter.status || this.jobFilter.type;
+                },
+                filteredJobHistory() {
+                    return this.jobHistory.filter(run => {
+                        const jobMatch = !this.historyFilter.job || run.jobName === this.historyFilter.job;
+                        const resultMatch = !this.historyFilter.result || 
+                            (this.historyFilter.result === 'success' ? run.success : !run.success);
+                        
+                        let dateMatch = true;
+                        if (this.historyFilter.dateFrom || this.historyFilter.dateTo) {
+                            const runDate = new Date(run.startTime).toDateString();
+                            if (this.historyFilter.dateFrom && runDate < new Date(this.historyFilter.dateFrom).toDateString()) {
+                                dateMatch = false;
+                            }
+                            if (this.historyFilter.dateTo && runDate > new Date(this.historyFilter.dateTo).toDateString()) {
+                                dateMatch = false;
+                            }
+                        }
+                        
+                        return jobMatch && resultMatch && dateMatch;
+                    });
                 }
             },
             methods: {
@@ -782,8 +1079,7 @@ const { createApp } = Vue;
                     this.selectedStatus = status;
                     this.showOutputModal = true;
                 },
-                
-                copyOutputLog() {
+                  copyOutputLog() {
                     if (this.selectedStatus?.outputLog) {
                         navigator.clipboard.writeText(this.selectedStatus.outputLog)
                             .then(() => {
@@ -793,10 +1089,119 @@ const { createApp } = Vue;
                                 alert('Failed to copy log: ' + err.message);
                             });
                     }
+                },
+                
+                // File picker methods
+                async browseDrives() {
+                    this.fileBrowserLoading = true;
+                    try {
+                        const response = await this.authenticatedFetch('/api/files/drives');
+                        const data = await response.json();
+                        this.fileBrowser.currentPath = '';
+                        this.fileBrowser.parentPath = null;
+                        this.fileBrowser.items = data;
+                        this.selectedFileItem = null;
+                    } catch (err) {
+                        console.error('Error loading drives:', err);
+                        alert('Failed to load drives');
+                    } finally {
+                        this.fileBrowserLoading = false;
+                    }
+                },
+                
+                async browseDirectory(path) {
+                    this.fileBrowserLoading = true;
+                    try {
+                        const response = await this.authenticatedFetch(`/api/files/browse?path=${encodeURIComponent(path)}`);
+                        const data = await response.json();
+                        this.fileBrowser.currentPath = data.currentPath;
+                        this.fileBrowser.parentPath = data.parentPath;
+                        this.fileBrowser.items = data.items;
+                        this.selectedFileItem = null;
+                    } catch (err) {
+                        console.error('Error browsing directory:', err);
+                        alert('Failed to browse directory');
+                    } finally {
+                        this.fileBrowserLoading = false;
+                    }
+                },
+                
+                browseParent() {
+                    if (this.fileBrowser.parentPath) {
+                        this.browseDirectory(this.fileBrowser.parentPath);
+                    }
+                },
+                
+                selectFileItem(item) {
+                    this.selectedFileItem = item;
+                },
+                
+                openFileItem(item) {
+                    if (item.type === 'directory' || item.type === 'drive') {
+                        this.browseDirectory(item.path);
+                    } else if (item.type === 'file') {
+                        this.selectedFileItem = item;
+                        this.selectFile();
+                    }
+                },
+                
+                selectFile() {
+                    if (this.selectedFileItem && this.selectedFileItem.type === 'file') {
+                        this.jobForm.script = this.selectedFileItem.path;
+                        this.showFilePicker = false;
+                        this.selectedFileItem = null;
+                    }
+                },
+                
+                // Filter methods
+                clearFilters() {
+                    this.jobFilter.name = '';
+                    this.jobFilter.status = '';
+                    this.jobFilter.type = '';
+                },
+                
+                // History methods
+                async loadJobHistory() {
+                    this.historyLoading = true;
+                    this.jobHistory = [];
+                    
+                    try {
+                        const jobs = this.historyFilter.job ? [this.historyFilter.job] : this.jobs.map(j => j.name);
+                        
+                        for (const jobName of jobs) {
+                            const response = await this.authenticatedFetch(`/api/jobs/${encodeURIComponent(jobName)}/history`);
+                            if (response.ok) {
+                                const history = await response.json();
+                                // Add job name to each history entry
+                                const historyWithJobName = history.map(h => ({ ...h, jobName }));
+                                this.jobHistory.push(...historyWithJobName);
+                            }
+                        }
+                        
+                        // Sort by start time descending (most recent first)
+                        this.jobHistory.sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
+                    } catch (err) {
+                        console.error('Error loading job history:', err);
+                        alert('Failed to load job history');
+                    } finally {
+                        this.historyLoading = false;
+                    }
+                },
+                
+                showHistoryOutputLog(run) {
+                    this.selectedHistoryRun = run;
+                    this.selectedStatus = {
+                        name: run.jobName,
+                        success: run.success,
+                        lastRun: run.startTime,
+                        duration: run.duration,
+                        message: run.message,
+                        outputLog: run.outputLog
+                    };
+                    this.showOutputModal = true;
                 }
             },
-            
-            mounted() {
+              mounted() {
                 this.checkStoredSession();
                 
                 // Auto-refresh data every 30 seconds
@@ -806,6 +1211,20 @@ const { createApp } = Vue;
                             this.loadStatus();
                         }
                     }, 30000);
+                }
+            },
+            
+            watch: {
+                showFilePicker(newVal) {
+                    if (newVal) {
+                        // Initialize file browser to user profile directory
+                        this.browseDirectory('');
+                    }
+                },
+                showHistoryModal(newVal) {
+                    if (newVal) {
+                        this.loadJobHistory();
+                    }
                 }
             }
         }).mount('#app');

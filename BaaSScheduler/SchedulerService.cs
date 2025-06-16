@@ -101,6 +101,10 @@ public class SchedulerService : BackgroundService
         var status = _statuses[job];
         var startTime = DateTime.Now;
         var outputLog = new System.Text.StringBuilder();
+        var runHistory = new JobRunHistory
+        {
+            StartTime = startTime
+        };
         
         try
         {
@@ -135,33 +139,59 @@ public class SchedulerService : BackgroundService
                     outputLog.AppendLine(error);
                 }
                 
-                status.Duration = DateTime.Now - startTime;
+                var endTime = DateTime.Now;
+                var duration = endTime - startTime;
+                
+                status.Duration = duration;
                 status.OutputLog = outputLog.ToString();
+                
+                // Update run history
+                runHistory.EndTime = endTime;
+                runHistory.Duration = duration;
+                runHistory.OutputLog = outputLog.ToString();
+                runHistory.ExitCode = proc.ExitCode;
                 
                 if (proc.ExitCode == 0)
                 {
                     _logger.LogInformation("Job {Job} succeeded", job.Name);
                     status.Success = true;
                     status.Message = "Success";
+                    runHistory.Success = true;
+                    runHistory.Message = "Success";
                 }
                 else
                 {
                     _logger.LogError("Job {Job} failed with exit code {Code}", job.Name, proc.ExitCode);
                     status.Success = false;
                     status.Message = $"Exit code {proc.ExitCode}";
+                    runHistory.Success = false;
+                    runHistory.Message = $"Exit code {proc.ExitCode}";
                 }
                 
+                status.AddRunHistory(runHistory);
                 await SendWebhookAsync(job, status);
             }
         }
         catch (Exception ex)
         {
+            var endTime = DateTime.Now;
+            var duration = endTime - startTime;
+            
             _logger.LogError(ex, "Job {Job} threw exception", job.Name);
             status.Success = false;
             status.Message = ex.Message;
-            status.Duration = DateTime.Now - startTime;
+            status.Duration = duration;
             status.OutputLog = outputLog.ToString() + $"\n=== EXCEPTION ===\n{ex}";
             
+            // Update run history
+            runHistory.EndTime = endTime;
+            runHistory.Duration = duration;
+            runHistory.Success = false;
+            runHistory.Message = ex.Message;
+            runHistory.OutputLog = outputLog.ToString() + $"\n=== EXCEPTION ===\n{ex}";
+            runHistory.ExitCode = -1;
+            
+            status.AddRunHistory(runHistory);
             await SendWebhookAsync(job, status);
         }
     }
@@ -635,6 +665,19 @@ public class SchedulerService : BackgroundService
             j.Enabled,
             j.Webhooks
         });
+    }
+
+    public List<JobRunHistory>? GetJobHistory(string jobName)
+    {
+        lock (_schedules)
+        {
+            var job = _config.Jobs.FirstOrDefault(j => j.Name.Equals(jobName, StringComparison.OrdinalIgnoreCase));
+            if (job != null && _statuses.TryGetValue(job, out var status))
+            {
+                return status.RunHistory;
+            }
+            return null;
+        }
     }
 }
 

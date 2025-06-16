@@ -119,6 +119,88 @@ app.MapPost("/api/auth/logout", ([FromServices] SessionService sessionService, H
     return Results.Ok();
 });
 
+// File browser endpoints
+app.MapGet("/api/files/browse", (string? path) =>
+{
+    try
+    {
+        var targetPath = string.IsNullOrEmpty(path) ? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) : path;
+        
+        if (!Directory.Exists(targetPath))
+        {
+            return Results.NotFound("Directory not found");
+        }
+        
+        var directories = Directory.GetDirectories(targetPath)
+            .Select(d => new
+            {
+                Name = Path.GetFileName(d),
+                Path = d,
+                Type = "directory",
+                Extension = (string?)null
+            }).ToList();
+            
+        var files = Directory.GetFiles(targetPath, "*")
+            .Where(f => {
+                var ext = Path.GetExtension(f).ToLowerInvariant();
+                return ext == ".ps1" || ext == ".bat" || ext == ".exe" || ext == ".cmd";
+            })
+            .Select(f => new
+            {
+                Name = Path.GetFileName(f),
+                Path = f,
+                Type = "file",
+                Extension = (string?)Path.GetExtension(f).ToLowerInvariant()
+            }).ToList();
+            
+        var parentPath = targetPath != Path.GetPathRoot(targetPath) ? Directory.GetParent(targetPath)?.FullName : null;
+        
+        var allItems = new List<object>();
+        allItems.AddRange(directories);
+        allItems.AddRange(files);
+        
+        return Results.Ok(new
+        {
+            CurrentPath = targetPath,
+            ParentPath = parentPath,
+            Items = allItems.OrderBy(i => ((dynamic)i).Type).ThenBy(i => ((dynamic)i).Name)
+        });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { message = ex.Message });
+    }
+});
+
+app.MapGet("/api/files/drives", () =>
+{
+    try
+    {
+        var drives = DriveInfo.GetDrives()
+            .Where(d => d.IsReady)
+            .Select(d => new
+            {
+                Name = d.Name,
+                Path = d.Name,
+                Type = "drive",
+                Label = d.VolumeLabel
+            });
+            
+        return Results.Ok(drives);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { message = ex.Message });
+    }
+});
+
+// Job run history endpoint
+app.MapGet("/api/jobs/{jobName}/history", ([FromRoute] string jobName, [FromServices] SchedulerService svc) =>
+{
+    var history = svc.GetJobHistory(jobName);
+    return history != null ? Results.Ok(history) : Results.NotFound();
+});
+
 app.MapGet("/", () => Results.Redirect("/index.html"));
 app.MapGet("/api/jobs", ([FromServices] SchedulerService svc) => svc.GetJobs());
 app.MapGet("/api/status", ([FromServices] SchedulerService svc) => svc.GetStatuses());
