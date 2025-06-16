@@ -8,11 +8,11 @@ using System.Reflection;
 using Microsoft.AspNetCore.Mvc;
 
 // optional configuration file parameter
-string configFile = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+string configFile = @"C:\BAAS\BaaSScheduler.json";
 var configArgIndex = Array.IndexOf(args, "--config");
 if (configArgIndex >= 0 && args.Length > configArgIndex + 1)
 {
-    configFile = args[configArgIndex + 1];
+    configFile = Path.GetFullPath(args[configArgIndex + 1]);
 }
 else
 {
@@ -20,9 +20,12 @@ else
     var match = args.FirstOrDefault(a => a.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
     if (match != null)
     {
-        configFile = match.Substring(prefix.Length);
+        configFile = Path.GetFullPath(match.Substring(prefix.Length));
     }
 }
+
+// Store the config file path for the configuration service to use
+ConfigurationHelper.ConfigFilePath = configFile;
 
 if (args.Contains("--install"))
 {
@@ -47,9 +50,59 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseWindowsService();
 
-builder.Configuration.AddJsonFile(configFile, optional: true, reloadOnChange: true);
+// Ensure the configuration directory exists if using the default path
+if (configFile == @"C:\BAAS\BaaSScheduler.json")
+{
+    var configDir = Path.GetDirectoryName(configFile);
+    if (!Directory.Exists(configDir))
+    {
+        Directory.CreateDirectory(configDir!);
+    }
+    
+    // Create default config file if it doesn't exist
+    if (!File.Exists(configFile))
+    {
+        var defaultConfig = new SchedulerConfig
+        {
+            Web = new WebConfig
+            {
+                Host = "localhost",
+                Port = 5000,
+                Password = "changeme"
+            },
+            Webhooks = new WebhookConfig
+            {
+                Enabled = true
+            },
+            Jobs = new List<JobConfig>()
+        };
+        
+        var json = System.Text.Json.JsonSerializer.Serialize(defaultConfig, new System.Text.Json.JsonSerializerOptions
+        {
+            WriteIndented = true,
+            PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase
+        });
+        
+        File.WriteAllText(configFile, json);
+    }
+}
+
+// Check if a custom config file was specified
+bool isCustomConfig = configFile != @"C:\BAAS\BaaSScheduler.json";
+
+if (isCustomConfig)
+{
+    // For custom config files, only load that specific file
+    builder.Configuration.AddJsonFile(configFile, optional: false, reloadOnChange: true);
+}
+else
+{
+    // For default config, load it along with development overrides
+    builder.Configuration.AddJsonFile(configFile, optional: true, reloadOnChange: true);
+}
 
 builder.Services.Configure<SchedulerConfig>(builder.Configuration);
+builder.Services.AddSingleton<IConfigurationService, ConfigurationService>();
 builder.Services.AddSingleton<SchedulerService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<SchedulerService>());
 builder.Services.AddSingleton<SessionService>();
@@ -204,6 +257,8 @@ app.MapGet("/api/jobs/{jobName}/history", ([FromRoute] string jobName, [FromServ
 app.MapGet("/", () => Results.Redirect("/index.html"));
 app.MapGet("/api/jobs", ([FromServices] SchedulerService svc) => svc.GetJobs());
 app.MapGet("/api/status", ([FromServices] SchedulerService svc) => svc.GetStatuses());
+app.MapGet("/api/config/path", ([FromServices] IConfigurationService configSvc) => 
+    Results.Ok(new { ConfigurationFilePath = configSvc.GetConfigurationFilePath() }));
 
 app.MapPost("/api/jobs", ([FromBody] JobConfig job, [FromServices] SchedulerService svc) =>
 {

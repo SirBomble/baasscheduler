@@ -9,22 +9,24 @@ public class SchedulerService : BackgroundService
 {
     private readonly ILogger<SchedulerService> _logger;
     private readonly IOptionsMonitor<SchedulerConfig> _configMonitor;
+    private readonly IConfigurationService _configurationService;
     private readonly Dictionary<JobConfig, CrontabSchedule> _schedules = new();
     private readonly Dictionary<JobConfig, DateTime> _nextRuns = new();
     private readonly Dictionary<JobConfig, JobStatus> _statuses = new();
     private SchedulerConfig _config;
 
-    public SchedulerService(ILogger<SchedulerService> logger, IOptionsMonitor<SchedulerConfig> configMonitor)
+    public SchedulerService(ILogger<SchedulerService> logger, IOptionsMonitor<SchedulerConfig> configMonitor, IConfigurationService configurationService)
     {
         _logger = logger;
         _configMonitor = configMonitor;
+        _configurationService = configurationService;
         _config = _configMonitor.CurrentValue;
         
         // Subscribe to configuration changes
         _configMonitor.OnChange(OnConfigurationChanged);
         
         InitializeJobs();
-    }    private void OnConfigurationChanged(SchedulerConfig newConfig)
+    }private void OnConfigurationChanged(SchedulerConfig newConfig)
     {
         _logger.LogInformation("Configuration changed, reloading jobs...");
         _config = newConfig;
@@ -498,9 +500,7 @@ public class SchedulerService : BackgroundService
                 NextRun = _nextRuns.TryGetValue(kvp.Key, out var nextRun) ? nextRun : (DateTime?)null
             }).ToList();
         }
-    }
-
-    public OperationResult AddJob(JobConfig job)
+    }    public OperationResult AddJob(JobConfig job)
     {
         lock (_schedules)
         {
@@ -527,12 +527,29 @@ public class SchedulerService : BackgroundService
                 }
             }
             
+            // Save configuration to file
+            try
+            {
+                _configurationService.SaveConfigurationAsync(_config).Wait();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to save configuration after adding job {Job}", job.Name);
+                // Remove the job from memory since we couldn't persist it
+                _config.Jobs.Remove(job);
+                if (_schedules.ContainsKey(job))
+                {
+                    _schedules.Remove(job);
+                    _nextRuns.Remove(job);
+                    _statuses.Remove(job);
+                }
+                return OperationResult.Error($"Failed to save configuration: {ex.Message}");
+            }
+            
             _logger.LogInformation("Job '{Job}' added successfully", job.Name);
             return OperationResult.Ok($"Job '{job.Name}' added successfully");
         }
-    }
-
-    public OperationResult UpdateJob(string jobName, JobConfig updatedJob)
+    }    public OperationResult UpdateJob(string jobName, JobConfig updatedJob)
     {
         lock (_schedules)
         {
@@ -578,12 +595,21 @@ public class SchedulerService : BackgroundService
                 }
             }
 
+            // Save configuration to file
+            try
+            {
+                _configurationService.SaveConfigurationAsync(_config).Wait();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to save configuration after updating job {Job}", existingJob.Name);
+                return OperationResult.Error($"Failed to save configuration: {ex.Message}");
+            }
+
             _logger.LogInformation("Job '{Job}' updated successfully", existingJob.Name);
             return OperationResult.Ok($"Job '{existingJob.Name}' updated successfully");
         }
-    }
-
-    public OperationResult DeleteJob(string jobName)
+    }    public OperationResult DeleteJob(string jobName)
     {
         lock (_schedules)
         {
@@ -604,12 +630,23 @@ public class SchedulerService : BackgroundService
             // Remove from config
             _config.Jobs.Remove(job);
 
+            // Save configuration to file
+            try
+            {
+                _configurationService.SaveConfigurationAsync(_config).Wait();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to save configuration after deleting job {Job}", jobName);
+                // Add the job back since we couldn't persist the deletion
+                _config.Jobs.Add(job);
+                return OperationResult.Error($"Failed to save configuration: {ex.Message}");
+            }
+
             _logger.LogInformation("Job '{Job}' deleted successfully", jobName);
             return OperationResult.Ok($"Job '{jobName}' deleted successfully");
         }
-    }
-
-    public OperationResult ToggleJob(string jobName)
+    }    public OperationResult ToggleJob(string jobName)
     {
         lock (_schedules)
         {
@@ -651,11 +688,23 @@ public class SchedulerService : BackgroundService
                 }
             }
 
+            // Save configuration to file
+            try
+            {
+                _configurationService.SaveConfigurationAsync(_config).Wait();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to save configuration after toggling job {Job}", jobName);
+                job.Enabled = !job.Enabled; // Revert the change
+                return OperationResult.Error($"Failed to save configuration: {ex.Message}");
+            }
+
             var status = job.Enabled ? "enabled" : "disabled";
             _logger.LogInformation("Job '{Job}' {Status}", jobName, status);
             return OperationResult.Ok($"Job '{jobName}' {status}");
         }
-    }    public IEnumerable<object> GetJobs()
+    }public IEnumerable<object> GetJobs()
     {
         return _config.Jobs.Select(j => new { 
             j.Name, 

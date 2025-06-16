@@ -1,0 +1,26 @@
+{
+  "jobs": [
+    {
+      "name": "CustomConfigTest",
+      "schedule": "*/5 * * * *",
+      "script": "echo \u0027Custom config test\u0027",
+      "type": "powershell",
+      "enabled": true,
+      "webhooks": {
+        "teams": "",
+        "discord": "",
+        "enabled": false
+      }
+    }
+  ],
+  "web": {
+    "host": "localhost",
+    "port": 5000,
+    "password": "changeme"
+  },
+  "webhooks": {
+    "teams": "",
+    "discord": "",
+    "enabled": true
+  }
+}

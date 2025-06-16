@@ -42,7 +42,7 @@ BAASScheduler.exe --install
 You may specify an alternate configuration file:
 
 ```bash
-BAASScheduler.exe --install --config C:\path\to\appsettings.json
+BAASScheduler.exe --install --config C:\MyConfigs\BaaSScheduler.json
 ```
 
 Uninstall with:
@@ -59,12 +59,13 @@ BAASScheduler.exe --console
 
 ## Configuration
 
-All runtime settings are stored in `appsettings.json`.
-The file is looked up relative to the executable by default but you can pass a
-custom path with `--config <file>` when running or installing the service.
+All runtime settings are stored in a JSON configuration file.
+By default, the configuration file is located at `C:\BAAS\BaaSScheduler.json`.
+You can specify a custom configuration file path with `--config <file>` when running or installing the service.
+The configuration file path should be an absolute path (e.g., `C:\MyConfigs\scheduler.json`).
 An example configuration is provided in `examples/appsettings.example.json`
 along with simple test scripts under `examples/scripts`.  Copy the example
-file to `appsettings.json` and adjust the script paths to quickly try the
+file to your desired location and adjust the script paths to quickly try the
 scheduler.
 
 ### Jobs
@@ -117,6 +118,18 @@ The service automatically reloads the configuration when `appsettings.json` is m
 Jobs are updated without requiring a service restart. Existing job execution status
 is preserved across configuration reloads.
 
+## Configuration Persistence
+
+When jobs are added, updated, or deleted through the web interface or API, the changes are automatically saved back to the `appsettings.json` file. This ensures that:
+
+- **Configuration Changes Persist**: All modifications made through the web UI are permanently saved
+- **Service Restarts Preserve Changes**: Jobs created/modified via the web interface will survive service restarts
+- **Backup Protection**: A backup of the configuration file (`appsettings.json.backup`) is created before each save operation
+- **Configuration File Location**: The web interface displays the full path of the configuration file being used
+- **Error Handling**: If configuration saving fails, the changes are reverted in memory and an error is returned
+
+The configuration persistence feature works with custom configuration file paths specified with the `--config` parameter.
+
 ## Web Interface
 
 The BaaS Scheduler includes a modern web interface accessible at `http://localhost:5000` (or your configured host/port).
@@ -158,6 +171,9 @@ The service exposes a REST API for integration with other systems:
 ### File Browser (for web interface)
 * `GET /api/files/browse?path={path}` – browse files and directories
 * `GET /api/files/drives` – list available drives
+
+### Configuration
+* `GET /api/config/path` – get the path of the current configuration file
 
 ### Authentication
 All API requests (except `/api/auth/login`) must include the `X-Session-Id` header with a valid session ID obtained from login.

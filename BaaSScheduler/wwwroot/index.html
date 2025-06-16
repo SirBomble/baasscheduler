@@ -73,10 +73,19 @@
                             </button>
                         </div>
                     </div>
-                </div>
-            </header>
+                </div>            </header>
 
             <main class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+                <!-- Configuration Info -->
+                <div v-if="configurationFilePath" class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                    <div class="flex items-center">
+                        <i class="fas fa-info-circle text-blue-600 mr-2"></i>
+                        <span class="text-sm text-blue-800">
+                            Configuration saved to: <span class="font-mono font-semibold">{{ configurationFilePath }}</span>
+                        </span>
+                    </div>
+                </div>
+                
                 <!-- Stats Cards -->
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
                     <div class="bg-white overflow-hidden shadow rounded-lg">
@@ -687,8 +696,7 @@
 
     <script src="/vue.global.prod.js"></script>
     <script>
-const { createApp } = Vue;        createApp({
-            data() {
+const { createApp } = Vue;        createApp({            data() {
                 return {
                     password: '',
                     authenticated: false,
@@ -703,6 +711,7 @@ const { createApp } = Vue;        createApp({
                     jobForm: this.getEmptyJobForm(),
                     showOutputModal: false,
                     selectedStatus: null,
+                    configurationFilePath: '',
                     
                     // File picker
                     showFilePicker: false,
@@ -733,7 +742,7 @@ const { createApp } = Vue;        createApp({
                     },
                     selectedHistoryRun: null
                 };
-            },            computed: {
+            },computed: {
                 enabledJobs() {
                     return this.jobs.filter(j => j.enabled).length;
                 },
@@ -840,9 +849,8 @@ const { createApp } = Vue;        createApp({
                     localStorage.removeItem('sessionId');
                     localStorage.removeItem('sessionExpiry');
                 },
-                
-                async loadData() {
-                    await Promise.all([this.loadJobs(), this.loadStatus()]);
+                  async loadData() {
+                    await Promise.all([this.loadJobs(), this.loadStatus(), this.loadConfigPath()]);
                 },
                 
                 async loadJobs() {
@@ -853,13 +861,22 @@ const { createApp } = Vue;        createApp({
                         console.error('Error loading jobs:', err);
                     }
                 },
-                
-                async loadStatus() {
+                  async loadStatus() {
                     try {
                         const response = await this.authenticatedFetch('/api/status');
                         this.status = await response.json();
                     } catch (err) {
                         console.error('Error loading status:', err);
+                    }
+                },
+                
+                async loadConfigPath() {
+                    try {
+                        const response = await this.authenticatedFetch('/api/config/path');
+                        const data = await response.json();
+                        this.configurationFilePath = data.configurationFilePath;
+                    } catch (err) {
+                        console.error('Error loading config path:', err);
                     }
                 },
                 
