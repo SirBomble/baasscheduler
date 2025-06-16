@@ -66,14 +66,18 @@ Each entry in `Jobs` defines a scheduled task:
   "Schedule": "*/5 * * * *",
   "Script": "C:/scripts/test.ps1",
   "Type": "powershell",
+  "Enabled": true,
   "Webhooks": {
-    "Teams": "",
-    "Discord": ""
+    "Teams": "https://your-teams-webhook-url",
+    "Discord": "https://discord.com/api/webhooks/your-webhook-url",
+    "Enabled": true
   }
 }
 ```
 
 `Schedule` uses standard cron notation. `Type` may be `powershell`, `bat` or `exe`.
+`Enabled` controls whether the job is active (defaults to true).
+Job-specific webhook settings override global ones when provided.
 
 ### Web
 `Web` controls the HTTP listener:
@@ -88,10 +92,20 @@ these values with their own `Webhooks` object.
 
 ```json
 "Webhooks": {
-  "Teams": "",
-  "Discord": ""
+  "Teams": "https://your-teams-webhook-url",
+  "Discord": "https://discord.com/api/webhooks/your-webhook-url",
+  "Enabled": true
 }
 ```
+
+`Enabled` controls whether webhooks are sent globally (defaults to true).
+Individual jobs can have their own `Enabled` setting to override this.
+
+## Auto-reload Configuration
+
+The service automatically reloads the configuration when `appsettings.json` is modified.
+Jobs are updated without requiring a service restart. Existing job execution status
+is preserved across configuration reloads.
 
 ## HTTP API
 

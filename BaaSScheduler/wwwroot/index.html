@@ -1,103 +1,670 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>BaaS Scheduler</title>
-<style>
-body { font-family: Arial, sans-serif; margin: 2em; }
-table { border-collapse: collapse; }
-th, td { border: 1px solid #ccc; padding: 4px 8px; }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BaaS Scheduler</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        [v-cloak] { display: none; }
+    </style>
 </head>
-<body>
-<h1>BaaS Scheduler</h1>
-<div id="app">
-  <section v-if="!authenticated">
-    <h2>Login</h2>
-    <form @submit.prevent="login">
-      <label>Password <input v-model="password" type="password" required></label>
-      <button>Connect</button>
-    </form>
-  </section>
-  <section v-else>
-    <h2>Configured Jobs</h2>
-    <table>
-      <thead><tr><th>Name</th><th>Schedule</th><th>Script</th></tr></thead>
-      <tbody>
-        <tr v-for="j in jobs" :key="j.name">
-          <td>{{ j.name }}</td>
-          <td>{{ j.schedule }}</td>
-          <td>{{ j.script }}</td>
-        </tr>
-      </tbody>
-    </table>
-    <h2>Job Status</h2>
-    <table>
-      <thead><tr><th>Name</th><th>Last Run</th><th>Success</th><th>Message</th></tr></thead>
-      <tbody>
-        <tr v-for="s in status" :key="s.name">
-          <td>{{ s.name }}</td>
-          <td>{{ s.lastRun }}</td>
-          <td>{{ s.success }}</td>
-          <td>{{ s.message }}</td>
-        </tr>
-      </tbody>
-    </table>
-    <h2>Add Job</h2>
-    <form @submit.prevent="addJob">
-      <label>Name <input v-model="newJob.Name" required></label><br>
-      <label>Schedule <input v-model="newJob.Schedule" required></label><br>
-      <label>Script <input v-model="newJob.Script" required></label><br>
-      <label>Type <input v-model="newJob.Type"></label><br>
-      <button>Add</button>
-    </form>
-  </section>
-</div>
-<script src="/vue.global.prod.js"></script>
-<script>
+<body class="bg-gray-50">
+    <div id="app" v-cloak>
+        <!-- Login Section -->
+        <div v-if="!authenticated" class="min-h-screen flex items-center justify-center">
+            <div class="max-w-md w-full space-y-8">
+                <div>
+                    <h2 class="mt-6 text-center text-3xl font-extrabold text-gray-900">
+                        BaaS Scheduler
+                    </h2>
+                    <p class="mt-2 text-center text-sm text-gray-600">
+                        Please sign in to continue
+                    </p>
+                </div>
+                <form @submit.prevent="login" class="mt-8 space-y-6">
+                    <div class="bg-white shadow-md rounded-lg p-6">
+                        <div class="mb-4">
+                            <label for="password" class="sr-only">Password</label>
+                            <input 
+                                id="password" 
+                                v-model="password" 
+                                type="password" 
+                                required 
+                                class="relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm" 
+                                placeholder="Password"
+                            >
+                        </div>
+                        <div>
+                            <button 
+                                type="submit" 
+                                :disabled="loading"
+                                class="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+                            >
+                                <span v-if="loading" class="absolute left-0 inset-y-0 flex items-center pl-3">
+                                    <i class="fas fa-spinner fa-spin"></i>
+                                </span>
+                                {{ loading ? 'Signing in...' : 'Sign in' }}
+                            </button>
+                        </div>
+                        <div v-if="error" class="mt-4 text-sm text-red-600 text-center">
+                            {{ error }}
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Main Dashboard -->
+        <div v-else class="min-h-screen bg-gray-50">
+            <!-- Header -->
+            <header class="bg-white shadow">
+                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <div class="flex justify-between items-center py-6">
+                        <h1 class="text-3xl font-bold text-gray-900">BaaS Scheduler</h1>
+                        <div class="flex items-center space-x-4">
+                            <span class="text-sm text-gray-500">Session expires in: {{ sessionTimeRemaining }}</span>
+                            <button 
+                                @click="logout" 
+                                class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-md text-sm font-medium"
+                            >
+                                <i class="fas fa-sign-out-alt mr-2"></i>Logout
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <main class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+                <!-- Stats Cards -->
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+                    <div class="bg-white overflow-hidden shadow rounded-lg">
+                        <div class="p-5">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0">
+                                    <i class="fas fa-tasks text-blue-500 text-2xl"></i>
+                                </div>
+                                <div class="ml-5 w-0 flex-1">
+                                    <dl>
+                                        <dt class="text-sm font-medium text-gray-500 truncate">Total Jobs</dt>
+                                        <dd class="text-lg font-medium text-gray-900">{{ jobs.length }}</dd>
+                                    </dl>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-white overflow-hidden shadow rounded-lg">
+                        <div class="p-5">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0">
+                                    <i class="fas fa-play text-green-500 text-2xl"></i>
+                                </div>
+                                <div class="ml-5 w-0 flex-1">
+                                    <dl>
+                                        <dt class="text-sm font-medium text-gray-500 truncate">Enabled Jobs</dt>
+                                        <dd class="text-lg font-medium text-gray-900">{{ enabledJobs }}</dd>
+                                    </dl>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-white overflow-hidden shadow rounded-lg">
+                        <div class="p-5">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0">
+                                    <i class="fas fa-check-circle text-green-500 text-2xl"></i>
+                                </div>
+                                <div class="ml-5 w-0 flex-1">
+                                    <dl>
+                                        <dt class="text-sm font-medium text-gray-500 truncate">Successful Runs</dt>
+                                        <dd class="text-lg font-medium text-gray-900">{{ successfulRuns }}</dd>
+                                    </dl>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-white overflow-hidden shadow rounded-lg">
+                        <div class="p-5">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0">
+                                    <i class="fas fa-exclamation-circle text-red-500 text-2xl"></i>
+                                </div>
+                                <div class="ml-5 w-0 flex-1">
+                                    <dl>
+                                        <dt class="text-sm font-medium text-gray-500 truncate">Failed Runs</dt>
+                                        <dd class="text-lg font-medium text-gray-900">{{ failedRuns }}</dd>
+                                    </dl>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Actions Bar -->
+                <div class="mb-6 flex justify-between items-center">
+                    <h2 class="text-xl font-semibold text-gray-900">Job Management</h2>
+                    <button 
+                        @click="showJobModal = true; editingJob = null; resetJobForm()"
+                        class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium"
+                    >
+                        <i class="fas fa-plus mr-2"></i>Add Job
+                    </button>
+                </div>
+
+                <!-- Jobs Table -->
+                <div class="bg-white shadow overflow-hidden sm:rounded-md mb-8">
+                    <div class="px-4 py-5 sm:p-6">
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Schedule</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Script</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white divide-y divide-gray-200">
+                                    <tr v-for="job in jobs" :key="job.name">
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ job.name }}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ job.schedule }}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ job.script }}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ job.type }}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            <span :class="job.enabled ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'" 
+                                                  class="inline-flex px-2 py-1 text-xs font-semibold rounded-full">
+                                                {{ job.enabled ? 'Enabled' : 'Disabled' }}
+                                            </span>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
+                                            <button 
+                                                @click="toggleJob(job.name)" 
+                                                :class="job.enabled ? 'text-red-600 hover:text-red-900' : 'text-green-600 hover:text-green-900'"
+                                                class="font-medium"
+                                            >
+                                                <i :class="job.enabled ? 'fas fa-pause' : 'fas fa-play'"></i>
+                                                {{ job.enabled ? 'Disable' : 'Enable' }}
+                                            </button>
+                                            <button 
+                                                @click="editJob(job)" 
+                                                class="text-blue-600 hover:text-blue-900 font-medium"
+                                            >
+                                                <i class="fas fa-edit"></i> Edit
+                                            </button>
+                                            <button 
+                                                @click="deleteJob(job.name)" 
+                                                class="text-red-600 hover:text-red-900 font-medium"
+                                            >
+                                                <i class="fas fa-trash"></i> Delete
+                                            </button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Status Table -->
+                <div class="bg-white shadow overflow-hidden sm:rounded-md">
+                    <div class="px-4 py-5 sm:p-6">
+                        <h3 class="text-lg font-medium text-gray-900 mb-4">Job Execution Status</h3>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-gray-200">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Run</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Next Run</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Result</th>
+                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Message</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="bg-white divide-y divide-gray-200">
+                                    <tr v-for="s in status" :key="s.name">
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ s.name }}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ formatDate(s.lastRun) }}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ formatDate(s.nextRun) }}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            <span :class="s.success ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'" 
+                                                  class="inline-flex px-2 py-1 text-xs font-semibold rounded-full">
+                                                {{ s.success ? 'Success' : 'Failed' }}
+                                            </span>
+                                        </td>
+                                        <td class="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">{{ s.message }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+
+        <!-- Job Modal -->
+        <div v-if="showJobModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+            <div class="relative top-20 mx-auto p-5 border w-11/12 md:w-3/4 lg:w-1/2 shadow-lg rounded-md bg-white">
+                <div class="mt-3">
+                    <h3 class="text-lg font-medium text-gray-900 mb-4">
+                        {{ editingJob ? 'Edit Job' : 'Add New Job' }}
+                    </h3>
+                    <form @submit.prevent="saveJob" class="space-y-4">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                                <input 
+                                    v-model="jobForm.name" 
+                                    type="text" 
+                                    required 
+                                    class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                    placeholder="Job name"
+                                >
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                                <select 
+                                    v-model="jobForm.type" 
+                                    class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                >
+                                    <option value="powershell">PowerShell</option>
+                                    <option value="bat">Batch</option>
+                                    <option value="exe">Executable</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Schedule (Cron Expression)</label>
+                            <input 
+                                v-model="jobForm.schedule" 
+                                type="text" 
+                                required 
+                                class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                placeholder="*/5 * * * * (every 5 minutes)"
+                            >
+                            <p class="text-xs text-gray-500 mt-1">Format: minute hour day month day-of-week</p>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Script Path</label>
+                            <input 
+                                v-model="jobForm.script" 
+                                type="text" 
+                                required 
+                                class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                placeholder="C:\\Scripts\\my-script.ps1"
+                            >
+                        </div>
+                        
+                        <div class="flex items-center">
+                            <input 
+                                v-model="jobForm.enabled" 
+                                type="checkbox" 
+                                class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                            >
+                            <label class="ml-2 block text-sm text-gray-900">Enable job immediately</label>
+                        </div>
+                        
+                        <div class="border-t pt-4">
+                            <h4 class="text-md font-medium text-gray-900 mb-2">Webhook Settings</h4>
+                            <div class="space-y-3">
+                                <div class="flex items-center">
+                                    <input 
+                                        v-model="jobForm.webhooks.enabled" 
+                                        type="checkbox" 
+                                        class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                                    >
+                                    <label class="ml-2 block text-sm text-gray-900">Enable webhooks for this job</label>
+                                </div>
+                                
+                                <div v-if="jobForm.webhooks.enabled">
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Teams Webhook URL</label>
+                                    <input 
+                                        v-model="jobForm.webhooks.teams" 
+                                        type="url" 
+                                        class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="https://..."
+                                    >
+                                </div>
+                                
+                                <div v-if="jobForm.webhooks.enabled">
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Discord Webhook URL</label>
+                                    <input 
+                                        v-model="jobForm.webhooks.discord" 
+                                        type="url" 
+                                        class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                        placeholder="https://..."
+                                    >
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="flex justify-end space-x-3 pt-4 border-t">
+                            <button 
+                                type="button" 
+                                @click="showJobModal = false"
+                                class="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
+                            >
+                                Cancel
+                            </button>
+                            <button 
+                                type="submit" 
+                                :disabled="loading"
+                                class="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+                            >
+                                {{ loading ? 'Saving...' : (editingJob ? 'Update Job' : 'Create Job') }}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/vue.global.prod.js"></script>
+    <script>
 const { createApp } = Vue;
-createApp({
-  data() {
-    return {
-      password: '',
-      authenticated: false,
-      jobs: [],
-      status: [],
-      newJob: { Name:'', Schedule:'', Script:'', Type:'powershell' }
-    };
-  },
-  methods: {
-    async login() {
-      await this.loadJobs();
-      await this.loadStatus();
-      this.authenticated = true;
-    },
-    async loadJobs() {
-      const res = await fetch('/api/jobs', {
-        headers: { 'X-Password': this.password }
-      });
-      this.jobs = await res.json();
-    },
-    async loadStatus() {
-      const res = await fetch('/api/status', {
-        headers: { 'X-Password': this.password }
-      });
-      this.status = await res.json();
-    },
-    async addJob() {
-      await fetch('/api/jobs', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Password': this.password
-        },
-        body: JSON.stringify(this.newJob)
-      });
-      this.newJob = { Name:'', Schedule:'', Script:'', Type:'powershell' };
-      await this.loadJobs();
-    }
-  }
-}).mount('#app');
-</script>
+        createApp({
+            data() {
+                return {
+                    password: '',
+                    authenticated: false,
+                    sessionId: '',
+                    sessionExpiry: null,
+                    jobs: [],
+                    status: [],
+                    loading: false,
+                    error: '',
+                    showJobModal: false,
+                    editingJob: null,
+                    jobForm: this.getEmptyJobForm()
+                };
+            },
+            computed: {
+                enabledJobs() {
+                    return this.jobs.filter(j => j.enabled).length;
+                },
+                successfulRuns() {
+                    return this.status.filter(s => s.success).length;
+                },
+                failedRuns() {
+                    return this.status.filter(s => !s.success).length;
+                },
+                sessionTimeRemaining() {
+                    if (!this.sessionExpiry) return '';
+                    const now = new Date();
+                    const remaining = this.sessionExpiry - now;
+                    if (remaining <= 0) return 'Expired';
+                    
+                    const minutes = Math.floor(remaining / 60000);
+                    const seconds = Math.floor((remaining % 60000) / 1000);
+                    return `${minutes}m ${seconds}s`;
+                }
+            },
+            methods: {
+                async login() {
+                    this.loading = true;
+                    this.error = '';
+                    
+                    try {
+                        const response = await fetch('/api/auth/login', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ password: this.password })
+                        });
+                        
+                        if (response.ok) {
+                            const data = await response.json();
+                            this.sessionId = data.sessionId;
+                            this.sessionExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+                            this.authenticated = true;
+                            this.password = '';
+                            
+                            // Store session in localStorage
+                            localStorage.setItem('sessionId', this.sessionId);
+                            localStorage.setItem('sessionExpiry', this.sessionExpiry.toISOString());
+                            
+                            await this.loadData();
+                            this.startSessionTimer();
+                        } else {
+                            this.error = 'Invalid password';
+                        }
+                    } catch (err) {
+                        this.error = 'Connection error';
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+                
+                async logout() {
+                    try {
+                        await fetch('/api/auth/logout', {
+                            method: 'POST',
+                            headers: { 'X-Session-Id': this.sessionId }
+                        });
+                    } catch (err) {
+                        console.error('Logout error:', err);
+                    }
+                    
+                    this.authenticated = false;
+                    this.sessionId = '';
+                    this.sessionExpiry = null;
+                    localStorage.removeItem('sessionId');
+                    localStorage.removeItem('sessionExpiry');
+                },
+                
+                async loadData() {
+                    await Promise.all([this.loadJobs(), this.loadStatus()]);
+                },
+                
+                async loadJobs() {
+                    try {
+                        const response = await this.authenticatedFetch('/api/jobs');
+                        this.jobs = await response.json();
+                    } catch (err) {
+                        console.error('Error loading jobs:', err);
+                    }
+                },
+                
+                async loadStatus() {
+                    try {
+                        const response = await this.authenticatedFetch('/api/status');
+                        this.status = await response.json();
+                    } catch (err) {
+                        console.error('Error loading status:', err);
+                    }
+                },
+                
+                async authenticatedFetch(url, options = {}) {
+                    const headers = {
+                        'X-Session-Id': this.sessionId,
+                        ...options.headers
+                    };
+                    
+                    const response = await fetch(url, { ...options, headers });
+                    
+                    if (response.status === 401) {
+                        this.logout();
+                        throw new Error('Session expired');
+                    }
+                    
+                    return response;
+                },
+                
+                getEmptyJobForm() {
+                    return {
+                        name: '',
+                        schedule: '',
+                        script: '',
+                        type: 'powershell',
+                        enabled: true,
+                        webhooks: {
+                            enabled: false,
+                            teams: '',
+                            discord: ''
+                        }
+                    };
+                },
+                
+                resetJobForm() {
+                    this.jobForm = this.getEmptyJobForm();
+                },
+                
+                editJob(job) {
+                    this.editingJob = job;
+                    this.jobForm = {
+                        name: job.name,
+                        schedule: job.schedule,
+                        script: job.script,
+                        type: job.type,
+                        enabled: job.enabled,
+                        webhooks: {
+                            enabled: job.webhooks?.enabled || false,
+                            teams: job.webhooks?.teams || '',
+                            discord: job.webhooks?.discord || ''
+                        }
+                    };
+                    this.showJobModal = true;
+                },
+                
+                async saveJob() {
+                    this.loading = true;
+                    
+                    try {
+                        const jobData = {
+                            Name: this.jobForm.name,
+                            Schedule: this.jobForm.schedule,
+                            Script: this.jobForm.script,
+                            Type: this.jobForm.type,
+                            Enabled: this.jobForm.enabled,
+                            Webhooks: {
+                                Enabled: this.jobForm.webhooks.enabled,
+                                Teams: this.jobForm.webhooks.teams,
+                                Discord: this.jobForm.webhooks.discord
+                            }
+                        };
+                        
+                        let response;
+                        if (this.editingJob) {
+                            response = await this.authenticatedFetch(`/api/jobs/${encodeURIComponent(this.editingJob.name)}`, {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(jobData)
+                            });
+                        } else {
+                            response = await this.authenticatedFetch('/api/jobs', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(jobData)
+                            });
+                        }
+                        
+                        if (response.ok) {
+                            this.showJobModal = false;
+                            this.editingJob = null;
+                            this.resetJobForm();
+                            await this.loadData();
+                        } else {
+                            const error = await response.json();
+                            alert(error.message || 'Error saving job');
+                        }
+                    } catch (err) {
+                        alert('Error saving job: ' + err.message);
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+                
+                async toggleJob(jobName) {
+                    try {
+                        const response = await this.authenticatedFetch(`/api/jobs/${encodeURIComponent(jobName)}/toggle`, {
+                            method: 'PATCH'
+                        });
+                        
+                        if (response.ok) {
+                            await this.loadData();
+                        } else {
+                            const error = await response.json();
+                            alert(error.message || 'Error toggling job');
+                        }
+                    } catch (err) {
+                        alert('Error toggling job: ' + err.message);
+                    }
+                },
+                
+                async deleteJob(jobName) {
+                    if (!confirm(`Are you sure you want to delete the job "${jobName}"?`)) {
+                        return;
+                    }
+                    
+                    try {
+                        const response = await this.authenticatedFetch(`/api/jobs/${encodeURIComponent(jobName)}`, {
+                            method: 'DELETE'
+                        });
+                        
+                        if (response.ok) {
+                            await this.loadData();
+                        } else {
+                            const error = await response.json();
+                            alert(error.message || 'Error deleting job');
+                        }
+                    } catch (err) {
+                        alert('Error deleting job: ' + err.message);
+                    }
+                },
+                
+                formatDate(dateString) {
+                    if (!dateString) return 'Never';
+                    return new Date(dateString).toLocaleString();
+                },
+                
+                startSessionTimer() {
+                    setInterval(() => {
+                        if (this.sessionExpiry && new Date() >= this.sessionExpiry) {
+                            this.logout();
+                        }
+                    }, 1000);
+                },
+                
+                checkStoredSession() {
+                    const storedSessionId = localStorage.getItem('sessionId');
+                    const storedExpiry = localStorage.getItem('sessionExpiry');
+                    
+                    if (storedSessionId && storedExpiry) {
+                        const expiry = new Date(storedExpiry);
+                        if (new Date() < expiry) {
+                            this.sessionId = storedSessionId;
+                            this.sessionExpiry = expiry;
+                            this.authenticated = true;
+                            this.loadData();
+                            this.startSessionTimer();
+                        } else {
+                            localStorage.removeItem('sessionId');
+                            localStorage.removeItem('sessionExpiry');
+                        }
+                    }
+                }
+            },
+            
+            mounted() {
+                this.checkStoredSession();
+                
+                // Auto-refresh data every 30 seconds
+                if (this.authenticated) {
+                    setInterval(() => {
+                        if (this.authenticated) {
+                            this.loadStatus();
+                        }
+                    }, 30000);
+                }
+            }
+        }).mount('#app');
+    </script>
 </body>
 </html>

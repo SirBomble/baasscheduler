@@ -47,11 +47,12 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.UseWindowsService();
 
-builder.Configuration.AddJsonFile(configFile, optional: true);
+builder.Configuration.AddJsonFile(configFile, optional: true, reloadOnChange: true);
 
 builder.Services.Configure<SchedulerConfig>(builder.Configuration);
 builder.Services.AddSingleton<SchedulerService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<SchedulerService>());
+builder.Services.AddSingleton<SessionService>();
 
 var config = builder.Configuration.Get<SchedulerConfig>() ?? new SchedulerConfig();
 
@@ -76,7 +77,16 @@ app.Use(async (context, next) =>
         await next();
         return;
     }
-    if (!context.Request.Headers.TryGetValue("X-Password", out var pw) || pw != config.Web.Password)
+
+    // Skip authentication for login endpoint
+    if (context.Request.Path.StartsWithSegments("/api/auth/login"))
+    {
+        await next();
+        return;
+    }    var sessionService = app.Services.GetRequiredService<SessionService>();
+    var sessionId = context.Request.Headers["X-Session-Id"].FirstOrDefault();
+    
+    if (!sessionService.IsValidSession(sessionId ?? string.Empty))
     {
         context.Response.StatusCode = 401;
         await context.Response.WriteAsync("Unauthorized");
@@ -85,14 +95,56 @@ app.Use(async (context, next) =>
     await next();
 });
 
+app.MapPost("/api/auth/login", ([FromBody] LoginRequest request, [FromServices] IConfiguration config, [FromServices] SessionService sessionService) =>
+{
+    try
+    {
+        var schedulerConfig = config.Get<SchedulerConfig>() ?? new SchedulerConfig();
+        var sessionId = sessionService.CreateSession(request.Password, schedulerConfig.Web.Password);
+        return Results.Ok(new { SessionId = sessionId });
+    }
+    catch (UnauthorizedAccessException)
+    {
+        return Results.Unauthorized();
+    }
+});
+
+app.MapPost("/api/auth/logout", ([FromServices] SessionService sessionService, HttpContext context) =>
+{
+    var sessionId = context.Request.Headers["X-Session-Id"].FirstOrDefault();
+    if (!string.IsNullOrEmpty(sessionId))
+    {
+        sessionService.InvalidateSession(sessionId);
+    }
+    return Results.Ok();
+});
+
 app.MapGet("/", () => Results.Redirect("/index.html"));
-app.MapGet("/api/jobs", ([FromServices] IOptions<SchedulerConfig> cfg) =>
-    cfg.Value.Jobs.Select(j => new { j.Name, j.Schedule, j.Script }));
+app.MapGet("/api/jobs", ([FromServices] SchedulerService svc) => svc.GetJobs());
 app.MapGet("/api/status", ([FromServices] SchedulerService svc) => svc.GetStatuses());
+
 app.MapPost("/api/jobs", ([FromBody] JobConfig job, [FromServices] SchedulerService svc) =>
 {
-    svc.AddJob(job);
-    return Results.Ok();
+    var result = svc.AddJob(job);
+    return result.Success ? Results.Ok(result) : Results.BadRequest(result);
+});
+
+app.MapPut("/api/jobs/{jobName}", ([FromRoute] string jobName, [FromBody] JobConfig job, [FromServices] SchedulerService svc) =>
+{
+    var result = svc.UpdateJob(jobName, job);
+    return result.Success ? Results.Ok(result) : Results.BadRequest(result);
+});
+
+app.MapDelete("/api/jobs/{jobName}", ([FromRoute] string jobName, [FromServices] SchedulerService svc) =>
+{
+    var result = svc.DeleteJob(jobName);
+    return result.Success ? Results.Ok(result) : Results.BadRequest(result);
+});
+
+app.MapPatch("/api/jobs/{jobName}/toggle", ([FromRoute] string jobName, [FromServices] SchedulerService svc) =>
+{
+    var result = svc.ToggleJob(jobName);
+    return result.Success ? Results.Ok(result) : Results.BadRequest(result);
 });
 
 app.Run();
