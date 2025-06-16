@@ -96,34 +96,62 @@ public class SchedulerService : BackgroundService
             }
             await Task.Delay(1000, stoppingToken);
         }
-    }
-
-    private async Task RunJobAsync(JobConfig job, CancellationToken token)
+    }    private async Task RunJobAsync(JobConfig job, CancellationToken token)
     {
         var status = _statuses[job];
+        var startTime = DateTime.Now;
+        var outputLog = new System.Text.StringBuilder();
+        
         try
         {
             _logger.LogInformation("Starting job {Job}", job.Name);
-            status.LastRun = DateTime.Now;
+            status.LastRun = startTime;
+            
             var psi = CreateProcessStartInfo(job);
+            psi.RedirectStandardOutput = true;
+            psi.RedirectStandardError = true;
+            
             using var proc = Process.Start(psi);
             if (proc != null)
             {
+                // Capture output and error streams
+                var outputTask = proc.StandardOutput.ReadToEndAsync();
+                var errorTask = proc.StandardError.ReadToEndAsync();
+                
                 await proc.WaitForExitAsync(token);
+                
+                var output = await outputTask;
+                var error = await errorTask;
+                
+                // Build complete output log
+                if (!string.IsNullOrEmpty(output))
+                {
+                    outputLog.AppendLine("=== STDOUT ===");
+                    outputLog.AppendLine(output);
+                }
+                if (!string.IsNullOrEmpty(error))
+                {
+                    outputLog.AppendLine("=== STDERR ===");
+                    outputLog.AppendLine(error);
+                }
+                
+                status.Duration = DateTime.Now - startTime;
+                status.OutputLog = outputLog.ToString();
+                
                 if (proc.ExitCode == 0)
                 {
                     _logger.LogInformation("Job {Job} succeeded", job.Name);
                     status.Success = true;
                     status.Message = "Success";
-                    await SendWebhookAsync(job, $"Job {job.Name} succeeded");
                 }
                 else
                 {
                     _logger.LogError("Job {Job} failed with exit code {Code}", job.Name, proc.ExitCode);
                     status.Success = false;
                     status.Message = $"Exit code {proc.ExitCode}";
-                    await SendWebhookAsync(job, $"Job {job.Name} failed with exit code {proc.ExitCode}");
                 }
+                
+                await SendWebhookAsync(job, status);
             }
         }
         catch (Exception ex)
@@ -131,7 +159,10 @@ public class SchedulerService : BackgroundService
             _logger.LogError(ex, "Job {Job} threw exception", job.Name);
             status.Success = false;
             status.Message = ex.Message;
-            await SendWebhookAsync(job, $"Job {job.Name} failed: {ex.Message}");
+            status.Duration = DateTime.Now - startTime;
+            status.OutputLog = outputLog.ToString() + $"\n=== EXCEPTION ===\n{ex}";
+            
+            await SendWebhookAsync(job, status);
         }
     }
 
@@ -161,7 +192,7 @@ public class SchedulerService : BackgroundService
                 break;
         }
         return psi;
-    }    private async Task SendWebhookAsync(JobConfig job, string message)
+    }    private async Task SendWebhookAsync(JobConfig job, JobStatus status)
     {
         // Check if webhooks are enabled globally or for this specific job
         var globalWebhooksEnabled = _config.Webhooks.Enabled;
@@ -175,62 +206,251 @@ public class SchedulerService : BackgroundService
 
         try
         {
+            var nextRun = _nextRuns.TryGetValue(job, out var next) ? next : (DateTime?)null;
+            
             using var client = new HttpClient();
             client.Timeout = TimeSpan.FromSeconds(30);
             
+            var tasks = new List<Task>();
+
+            // Send Teams webhook
             var teamsUrl = string.IsNullOrWhiteSpace(job.Webhooks?.Teams)
                 ? _config.Webhooks.Teams
                 : job.Webhooks!.Teams;
+            
             if (!string.IsNullOrWhiteSpace(teamsUrl))
             {
-                try
-                {
-                    var teamsPayload = new { text = message };
-                    var content = new StringContent(System.Text.Json.JsonSerializer.Serialize(teamsPayload), System.Text.Encoding.UTF8, "application/json");
-                    var response = await client.PostAsync(teamsUrl, content);
-                    if (response.IsSuccessStatusCode)
-                    {
-                        _logger.LogDebug("Teams webhook sent successfully for job {Job}", job.Name);
-                    }
-                    else
-                    {
-                        _logger.LogWarning("Teams webhook failed for job {Job}: {StatusCode}", job.Name, response.StatusCode);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to send Teams webhook for job {Job}", job.Name);
-                }
+                tasks.Add(SendTeamsWebhookAsync(client, teamsUrl, job, status, nextRun));
             }
 
+            // Send Discord webhook
             var discordUrl = string.IsNullOrWhiteSpace(job.Webhooks?.Discord)
                 ? _config.Webhooks.Discord
                 : job.Webhooks!.Discord;
+            
             if (!string.IsNullOrWhiteSpace(discordUrl))
             {
-                try
-                {
-                    var discordPayload = new { content = message };
-                    var content = new StringContent(System.Text.Json.JsonSerializer.Serialize(discordPayload), System.Text.Encoding.UTF8, "application/json");
-                    var response = await client.PostAsync(discordUrl, content);
-                    if (response.IsSuccessStatusCode)
-                    {
-                        _logger.LogDebug("Discord webhook sent successfully for job {Job}", job.Name);
-                    }
-                    else
-                    {
-                        _logger.LogWarning("Discord webhook failed for job {Job}: {StatusCode}", job.Name, response.StatusCode);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to send Discord webhook for job {Job}", job.Name);
-                }
+                tasks.Add(SendDiscordWebhookAsync(client, discordUrl, job, status, nextRun));
+            }
+
+            if (tasks.Any())
+            {
+                await Task.WhenAll(tasks);
             }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to send webhook for job {Job}", job.Name);
+        }
+    }
+
+    private async Task SendTeamsWebhookAsync(HttpClient client, string webhookUrl, JobConfig job, JobStatus status, DateTime? nextRun)
+    {
+        try
+        {
+            var card = CreateTeamsAdaptiveCard(job, status, nextRun);
+            var payload = new { type = "message", attachments = new[] { card } };
+            
+            var json = System.Text.Json.JsonSerializer.Serialize(payload, new System.Text.Json.JsonSerializerOptions 
+            { 
+                PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+            });
+            
+            var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+            var response = await client.PostAsync(webhookUrl, content);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                _logger.LogDebug("Teams webhook sent successfully for job {Job}", job.Name);
+            }
+            else
+            {
+                var responseContent = await response.Content.ReadAsStringAsync();
+                _logger.LogWarning("Teams webhook failed for job {Job}: {StatusCode} - {Response}", 
+                    job.Name, response.StatusCode, responseContent);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send Teams webhook for job {Job}", job.Name);
+        }
+    }
+
+    private async Task SendDiscordWebhookAsync(HttpClient client, string webhookUrl, JobConfig job, JobStatus status, DateTime? nextRun)
+    {
+        try
+        {
+            var embed = CreateDiscordEmbed(job, status, nextRun);
+            var payload = new { embeds = new[] { embed } };
+            
+            var json = System.Text.Json.JsonSerializer.Serialize(payload, new System.Text.Json.JsonSerializerOptions 
+            { 
+                PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+            });
+            
+            var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+            var response = await client.PostAsync(webhookUrl, content);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                _logger.LogDebug("Discord webhook sent successfully for job {Job}", job.Name);
+            }
+            else
+            {
+                var responseContent = await response.Content.ReadAsStringAsync();
+                _logger.LogWarning("Discord webhook failed for job {Job}: {StatusCode} - {Response}", 
+                    job.Name, response.StatusCode, responseContent);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send Discord webhook for job {Job}", job.Name);
+        }
+    }
+
+    private object CreateTeamsAdaptiveCard(JobConfig job, JobStatus status, DateTime? nextRun)
+    {
+        var isSuccess = status.Success == true;
+        var statusText = isSuccess ? "✅ Success" : "❌ Failed";
+        
+        var facts = new List<object>
+        {
+            new { title = "Job Name", value = job.Name },
+            new { title = "Status", value = statusText },
+            new { title = "Run Time", value = status.LastRun?.ToString("yyyy-MM-dd HH:mm:ss") ?? "Unknown" }
+        };
+
+        if (status.Duration.HasValue)
+        {
+            facts.Add(new { title = "Duration", value = FormatDuration(status.Duration.Value) });
+        }
+
+        if (nextRun.HasValue)
+        {
+            facts.Add(new { title = "Next Run", value = nextRun.Value.ToString("yyyy-MM-dd HH:mm:ss") });
+        }
+
+        if (!string.IsNullOrEmpty(status.Message))
+        {
+            facts.Add(new { title = "Result", value = status.Message });
+        }
+
+        var bodyElements = new List<object>
+        {
+            new
+            {
+                type = "TextBlock",
+                text = "🤖 BaaS Scheduler - Job Execution Report",
+                weight = "bolder",
+                size = "medium"
+            },
+            new
+            {
+                type = "FactSet",
+                facts = facts.ToArray()
+            }
+        };
+
+        // Add output log section if available
+        if (!string.IsNullOrWhiteSpace(status.OutputLog))
+        {
+            // Truncate log if too long for Teams (limit to ~2000 chars for readability)
+            var truncatedLog = status.OutputLog.Length > 2000 
+                ? status.OutputLog.Substring(0, 2000) + "\n\n... (output truncated)"
+                : status.OutputLog;
+
+            bodyElements.Add(new
+            {
+                type = "TextBlock",
+                text = "Output Log:",
+                weight = "bolder",
+                spacing = "medium"
+            });
+            
+            bodyElements.Add(new
+            {
+                type = "TextBlock",
+                text = truncatedLog,
+                fontType = "monospace",
+                wrap = true,
+                spacing = "small"
+            });
+        }
+
+        return new
+        {
+            contentType = "application/vnd.microsoft.card.adaptive",
+            content = new
+            {
+                type = "AdaptiveCard",
+                version = "1.4",
+                body = bodyElements.ToArray()
+            }
+        };
+    }
+
+    private object CreateDiscordEmbed(JobConfig job, JobStatus status, DateTime? nextRun)
+    {
+        var isSuccess = status.Success == true;
+        var color = isSuccess ? 0x00ff00 : 0xff0000; // Green for success, red for failure
+        var statusEmoji = isSuccess ? "✅" : "❌";
+        
+        var fields = new List<object>
+        {
+            new { name = "Status", value = $"{statusEmoji} {(isSuccess ? "Success" : "Failed")}", inline = true },
+            new { name = "Run Time", value = status.LastRun?.ToString("yyyy-MM-dd HH:mm:ss") ?? "Unknown", inline = true }
+        };
+
+        if (status.Duration.HasValue)
+        {
+            fields.Add(new { name = "Duration", value = FormatDuration(status.Duration.Value), inline = true });
+        }
+
+        if (nextRun.HasValue)
+        {
+            fields.Add(new { name = "Next Run", value = nextRun.Value.ToString("yyyy-MM-dd HH:mm:ss"), inline = true });
+        }
+
+        if (!string.IsNullOrEmpty(status.Message))
+        {
+            fields.Add(new { name = "Result", value = status.Message, inline = false });
+        }
+
+        if (!string.IsNullOrWhiteSpace(status.OutputLog))
+        {
+            // Truncate log if too long for Discord (limit to 1024 chars per field)
+            var truncatedLog = status.OutputLog.Length > 1000 
+                ? status.OutputLog.Substring(0, 1000) + "\n... (truncated)"
+                : status.OutputLog;
+            
+            fields.Add(new { name = "Output Log", value = $"```\n{truncatedLog}\n```", inline = false });
+        }
+
+        return new
+        {
+            title = $"🤖 BaaS Scheduler - {job.Name}",
+            color = color,
+            fields = fields.ToArray(),
+            timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ"),
+            footer = new { text = "BaaS Scheduler" }
+        };
+    }
+
+    private string FormatDuration(TimeSpan duration)
+    {
+        if (duration.TotalMinutes < 1)
+        {
+            return $"{duration.TotalSeconds:F1}s";
+        }
+        else if (duration.TotalHours < 1)
+        {
+            return $"{duration.TotalMinutes:F1}m";
+        }
+        else
+        {
+            return $"{duration.TotalHours:F1}h";
         }
     }    public IEnumerable<object> GetStatuses()
     {
@@ -243,6 +463,8 @@ public class SchedulerService : BackgroundService
                 kvp.Value.LastRun,
                 kvp.Value.Success,
                 kvp.Value.Message,
+                kvp.Value.Duration,
+                kvp.Value.OutputLog,
                 NextRun = _nextRuns.TryGetValue(kvp.Key, out var nextRun) ? nextRun : (DateTime?)null
             }).ToList();
         }
