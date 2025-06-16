@@ -10,16 +10,18 @@ public class SchedulerService : BackgroundService
     private readonly ILogger<SchedulerService> _logger;
     private readonly IOptionsMonitor<SchedulerConfig> _configMonitor;
     private readonly IConfigurationService _configurationService;
+    private readonly IRunHistoryService _runHistoryService;
     private readonly Dictionary<JobConfig, CrontabSchedule> _schedules = new();
     private readonly Dictionary<JobConfig, DateTime> _nextRuns = new();
     private readonly Dictionary<JobConfig, JobStatus> _statuses = new();
     private SchedulerConfig _config;
 
-    public SchedulerService(ILogger<SchedulerService> logger, IOptionsMonitor<SchedulerConfig> configMonitor, IConfigurationService configurationService)
+    public SchedulerService(ILogger<SchedulerService> logger, IOptionsMonitor<SchedulerConfig> configMonitor, IConfigurationService configurationService, IRunHistoryService runHistoryService)
     {
         _logger = logger;
         _configMonitor = configMonitor;
         _configurationService = configurationService;
+        _runHistoryService = runHistoryService;
         _config = _configMonitor.CurrentValue;
         
         // Subscribe to configuration changes
@@ -52,9 +54,7 @@ public class SchedulerService : BackgroundService
             _logger.LogInformation("Loaded {Count} jobs, {EnabledCount} enabled", 
                 _config.Jobs.Count, _config.Jobs.Count(j => j.Enabled));
         }
-    }
-
-    private void InitializeJobs()
+    }    private void InitializeJobs()
     {
         foreach (var job in _config.Jobs)
         {
@@ -71,7 +71,23 @@ public class SchedulerService : BackgroundService
                 _nextRuns[job] = schedule.GetNextOccurrence(DateTime.Now);
                 if (!_statuses.ContainsKey(job))
                 {
-                    _statuses[job] = new JobStatus();
+                    var status = new JobStatus();
+                    _statuses[job] = status;
+                    
+                    // Load run history from persistent storage
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            var runHistory = await _runHistoryService.LoadRunHistoryAsync(job.Name);
+                            status.RunHistory = runHistory;
+                            _logger.LogDebug("Loaded {Count} run history entries for job {Job}", runHistory.Count, job.Name);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "Failed to load run history for job {Job}", job.Name);
+                        }
+                    });
                 }
             }
             catch (Exception ex)
@@ -79,7 +95,7 @@ public class SchedulerService : BackgroundService
                 _logger.LogError(ex, "Failed to parse schedule '{Schedule}' for job {Job}", job.Schedule, job.Name);
             }
         }
-    }    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    }protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -167,10 +183,20 @@ public class SchedulerService : BackgroundService
                     status.Success = false;
                     status.Message = $"Exit code {proc.ExitCode}";
                     runHistory.Success = false;
-                    runHistory.Message = $"Exit code {proc.ExitCode}";
-                }
+                    runHistory.Message = $"Exit code {proc.ExitCode}";                }
                 
                 status.AddRunHistory(runHistory);
+                
+                // Save to persistent storage
+                try
+                {
+                    await _runHistoryService.SaveRunHistoryAsync(job.Name, runHistory);
+                }
+                catch (Exception persistEx)
+                {
+                    _logger.LogError(persistEx, "Failed to save run history for job {Job}", job.Name);
+                }
+                
                 await SendWebhookAsync(job, status);
             }
         }
@@ -190,10 +216,20 @@ public class SchedulerService : BackgroundService
             runHistory.Duration = duration;
             runHistory.Success = false;
             runHistory.Message = ex.Message;
-            runHistory.OutputLog = outputLog.ToString() + $"\n=== EXCEPTION ===\n{ex}";
-            runHistory.ExitCode = -1;
+            runHistory.OutputLog = outputLog.ToString() + $"\n=== EXCEPTION ===\n{ex}";            runHistory.ExitCode = -1;
             
             status.AddRunHistory(runHistory);
+            
+            // Save to persistent storage
+            try
+            {
+                await _runHistoryService.SaveRunHistoryAsync(job.Name, runHistory);
+            }
+            catch (Exception persistEx)
+            {
+                _logger.LogError(persistEx, "Failed to save run history for job {Job}", job.Name);
+            }
+            
             await SendWebhookAsync(job, status);
         }
     }

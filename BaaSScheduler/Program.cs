@@ -103,6 +103,7 @@ else
 
 builder.Services.Configure<SchedulerConfig>(builder.Configuration);
 builder.Services.AddSingleton<IConfigurationService, ConfigurationService>();
+builder.Services.AddSingleton<IRunHistoryService, RunHistoryService>();
 builder.Services.AddSingleton<SchedulerService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<SchedulerService>());
 builder.Services.AddSingleton<SessionService>();
@@ -259,6 +260,9 @@ app.MapGet("/api/jobs", ([FromServices] SchedulerService svc) => svc.GetJobs());
 app.MapGet("/api/status", ([FromServices] SchedulerService svc) => svc.GetStatuses());
 app.MapGet("/api/config/path", ([FromServices] IConfigurationService configSvc) => 
     Results.Ok(new { ConfigurationFilePath = configSvc.GetConfigurationFilePath() }));
+
+app.MapGet("/api/runhistory/path", ([FromServices] IRunHistoryService runHistorySvc) => 
+    Results.Ok(new { RunHistoryFilePath = runHistorySvc.GetRunHistoryFilePath() }));
 
 app.MapPost("/api/jobs", ([FromBody] JobConfig job, [FromServices] SchedulerService svc) =>
 {
