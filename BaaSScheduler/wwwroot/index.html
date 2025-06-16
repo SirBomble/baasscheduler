@@ -62,8 +62,17 @@
             <header class="bg-white shadow">
                 <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div class="flex justify-between items-center py-6">
-                        <h1 class="text-3xl font-bold text-gray-900">BaaS Scheduler</h1>
-                        <div class="flex items-center space-x-4">
+                        <h1 class="text-3xl font-bold text-gray-900">BaaS Scheduler</h1>                        <div class="flex items-center space-x-4">
+                            <div class="flex items-center space-x-2">
+                                <label class="relative inline-flex items-center cursor-pointer">
+                                    <input type="checkbox" v-model="autoRefresh" @change="toggleAutoRefresh" class="sr-only peer">
+                                    <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                                    <span class="ml-2 text-sm text-gray-500">Auto-refresh</span>
+                                </label>
+                                <span class="text-xs text-gray-400" v-if="historicalStats.lastUpdated">
+                                    Last updated: {{ formatDate(historicalStats.lastUpdated) }}
+                                </span>
+                            </div>
                             <span class="text-sm text-gray-500">Session expires in: {{ sessionTimeRemaining }}</span>
                             <button 
                                 @click="logout" 
@@ -125,11 +134,14 @@
                             <div class="flex items-center">
                                 <div class="flex-shrink-0">
                                     <i class="fas fa-check-circle text-green-500 text-2xl"></i>
-                                </div>
-                                <div class="ml-5 w-0 flex-1">
+                                </div>                                <div class="ml-5 w-0 flex-1">
                                     <dl>
-                                        <dt class="text-sm font-medium text-gray-500 truncate">Successful Runs</dt>
+                                        <dt class="text-sm font-medium text-gray-500 truncate flex items-center">
+                                            Successful Runs
+                                            <i v-if="loading" class="fas fa-spinner fa-spin ml-2 text-xs text-gray-400"></i>
+                                        </dt>
                                         <dd class="text-lg font-medium text-gray-900">{{ successfulRuns }}</dd>
+                                        <dd class="text-xs text-gray-500" v-if="successfulRuns > 0">All time total</dd>
                                     </dl>
                                 </div>
                             </div>
@@ -141,11 +153,14 @@
                             <div class="flex items-center">
                                 <div class="flex-shrink-0">
                                     <i class="fas fa-exclamation-circle text-red-500 text-2xl"></i>
-                                </div>
-                                <div class="ml-5 w-0 flex-1">
+                                </div>                                <div class="ml-5 w-0 flex-1">
                                     <dl>
-                                        <dt class="text-sm font-medium text-gray-500 truncate">Failed Runs</dt>
+                                        <dt class="text-sm font-medium text-gray-500 truncate flex items-center">
+                                            Failed Runs
+                                            <i v-if="loading" class="fas fa-spinner fa-spin ml-2 text-xs text-gray-400"></i>
+                                        </dt>
                                         <dd class="text-lg font-medium text-gray-900">{{ failedRuns }}</dd>
+                                        <dd class="text-xs text-gray-500" v-if="failedRuns > 0">All time total</dd>
                                     </dl>
                                 </div>
                             </div>
@@ -729,8 +744,7 @@ const { createApp } = Vue;        createApp({            data() {
                         status: '',
                         type: ''
                     },
-                    
-                    // Run history
+                      // Run history
                     showHistoryModal: false,
                     jobHistory: [],
                     historyLoading: false,
@@ -740,17 +754,29 @@ const { createApp } = Vue;        createApp({            data() {
                         dateFrom: '',
                         dateTo: ''
                     },
-                    selectedHistoryRun: null
+                    selectedHistoryRun: null,
+                    
+                    // Historical statistics
+                    historicalStats: {
+                        totalSuccessfulRuns: 0,
+                        totalFailedRuns: 0,
+                        recentRuns: [],
+                        lastUpdated: null
+                    },
+                    
+                    // Auto-refresh settings
+                    autoRefresh: true,
+                    refreshInterval: 30000, // 30 seconds
+                    refreshTimer: null
                 };
-            },computed: {
-                enabledJobs() {
+            },computed: {                enabledJobs() {
                     return this.jobs.filter(j => j.enabled).length;
                 },
                 successfulRuns() {
-                    return this.status.filter(s => s.success).length;
+                    return this.historicalStats.totalSuccessfulRuns;
                 },
                 failedRuns() {
-                    return this.status.filter(s => !s.success).length;
+                    return this.historicalStats.totalFailedRuns;
                 },
                 sessionTimeRemaining() {
                     if (!this.sessionExpiry) return '';
@@ -820,9 +846,9 @@ const { createApp } = Vue;        createApp({            data() {
                             // Store session in localStorage
                             localStorage.setItem('sessionId', this.sessionId);
                             localStorage.setItem('sessionExpiry', this.sessionExpiry.toISOString());
-                            
-                            await this.loadData();
+                              await this.loadData();
                             this.startSessionTimer();
+                            this.startAutoRefresh();
                         } else {
                             this.error = 'Invalid password';
                         }
@@ -842,15 +868,19 @@ const { createApp } = Vue;        createApp({            data() {
                     } catch (err) {
                         console.error('Logout error:', err);
                     }
-                    
-                    this.authenticated = false;
+                      this.authenticated = false;
                     this.sessionId = '';
                     this.sessionExpiry = null;
+                    this.stopAutoRefresh();
                     localStorage.removeItem('sessionId');
                     localStorage.removeItem('sessionExpiry');
-                },
-                  async loadData() {
-                    await Promise.all([this.loadJobs(), this.loadStatus(), this.loadConfigPath()]);
+                },                async loadData() {
+                    await Promise.all([
+                        this.loadJobs(), 
+                        this.loadStatus(), 
+                        this.loadConfigPath(),
+                        this.loadHistoricalStats()
+                    ]);
                 },
                 
                 async loadJobs() {
@@ -877,6 +907,15 @@ const { createApp } = Vue;        createApp({            data() {
                         this.configurationFilePath = data.configurationFilePath;
                     } catch (err) {
                         console.error('Error loading config path:', err);
+                    }
+                },
+                
+                async loadHistoricalStats() {
+                    try {
+                        const response = await this.authenticatedFetch('/api/stats/historical');
+                        this.historicalStats = await response.json();
+                    } catch (err) {
+                        console.error('Error loading historical stats:', err);
                     }
                 },
                 
@@ -1081,10 +1120,10 @@ const { createApp } = Vue;        createApp({            data() {
                         const expiry = new Date(storedExpiry);
                         if (new Date() < expiry) {
                             this.sessionId = storedSessionId;
-                            this.sessionExpiry = expiry;
-                            this.authenticated = true;
+                            this.sessionExpiry = expiry;                            this.authenticated = true;
                             this.loadData();
                             this.startSessionTimer();
+                            this.startAutoRefresh();
                         } else {
                             localStorage.removeItem('sessionId');
                             localStorage.removeItem('sessionExpiry');
@@ -1183,20 +1222,10 @@ const { createApp } = Vue;        createApp({            data() {
                     this.jobHistory = [];
                     
                     try {
-                        const jobs = this.historyFilter.job ? [this.historyFilter.job] : this.jobs.map(j => j.name);
-                        
-                        for (const jobName of jobs) {
-                            const response = await this.authenticatedFetch(`/api/jobs/${encodeURIComponent(jobName)}/history`);
-                            if (response.ok) {
-                                const history = await response.json();
-                                // Add job name to each history entry
-                                const historyWithJobName = history.map(h => ({ ...h, jobName }));
-                                this.jobHistory.push(...historyWithJobName);
-                            }
+                        const response = await this.authenticatedFetch('/api/runhistory/all');
+                        if (response.ok) {
+                            this.jobHistory = await response.json();
                         }
-                        
-                        // Sort by start time descending (most recent first)
-                        this.jobHistory.sort((a, b) => new Date(b.startTime) - new Date(a.startTime));
                     } catch (err) {
                         console.error('Error loading job history:', err);
                         alert('Failed to load job history');
@@ -1216,19 +1245,48 @@ const { createApp } = Vue;        createApp({            data() {
                         outputLog: run.outputLog
                     };
                     this.showOutputModal = true;
-                }
-            },
-              mounted() {
-                this.checkStoredSession();
+                },
                 
-                // Auto-refresh data every 30 seconds
-                if (this.authenticated) {
-                    setInterval(() => {
-                        if (this.authenticated) {
-                            this.loadStatus();
-                        }
-                    }, 30000);
-                }
+                startAutoRefresh() {
+                    if (this.refreshTimer) {
+                        clearInterval(this.refreshTimer);
+                    }
+                    
+                    if (this.autoRefresh) {
+                        this.refreshTimer = setInterval(async () => {
+                            try {
+                                await Promise.all([
+                                    this.loadStatus(),
+                                    this.loadHistoricalStats()
+                                ]);
+                            } catch (err) {
+                                console.error('Error during auto-refresh:', err);
+                            }
+                        }, this.refreshInterval);
+                    }
+                },
+                
+                stopAutoRefresh() {
+                    if (this.refreshTimer) {
+                        clearInterval(this.refreshTimer);
+                        this.refreshTimer = null;
+                    }
+                },
+                
+                toggleAutoRefresh() {
+                    this.autoRefresh = !this.autoRefresh;
+                    if (this.autoRefresh) {
+                        this.startAutoRefresh();
+                    } else {
+                        this.stopAutoRefresh();
+                    }
+                },
+            },              mounted() {
+                this.checkStoredSession();
+            },
+            
+            beforeUnmount() {
+                this.stopAutoRefresh();
             },
             
             watch: {

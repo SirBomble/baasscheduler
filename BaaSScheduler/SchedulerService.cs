@@ -763,6 +763,79 @@ public class SchedulerService : BackgroundService
             }
             return null;
         }
+    }    public async Task<Dictionary<string, object>> GetHistoricalStatsAsync()
+    {
+        try
+        {
+            var allHistories = await _runHistoryService.LoadAllRunHistoriesAsync();
+            var totalSuccessful = 0;
+            var totalFailed = 0;
+
+            foreach (var kvp in allHistories)
+            {
+                var jobName = kvp.Key;
+                var histories = kvp.Value;
+                
+                foreach (var run in histories)
+                {
+                    if (run.Success)
+                        totalSuccessful++;
+                    else
+                        totalFailed++;
+                }
+            }
+
+            // Get recent runs with job names
+            var recentRunsWithJobNames = new List<object>();
+            foreach (var kvp in allHistories)
+            {
+                var jobName = kvp.Key;
+                var histories = kvp.Value;
+                
+                foreach (var run in histories.Take(20))
+                {
+                    recentRunsWithJobNames.Add(new
+                    {
+                        JobName = jobName,
+                        StartTime = run.StartTime,
+                        EndTime = run.EndTime,
+                        Success = run.Success,
+                        Message = run.Message,
+                        Duration = run.Duration,
+                        ExitCode = run.ExitCode
+                    });
+                }
+            }
+
+            var sortedRecentRuns = recentRunsWithJobNames
+                .OrderByDescending(r => ((dynamic)r).StartTime)
+                .Take(20)
+                .ToList();
+
+            return new Dictionary<string, object>
+            {
+                ["totalSuccessfulRuns"] = totalSuccessful,
+                ["totalFailedRuns"] = totalFailed,
+                ["recentRuns"] = sortedRecentRuns,
+                ["lastUpdated"] = DateTime.UtcNow
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get historical statistics");
+            return new Dictionary<string, object>
+            {
+                ["totalSuccessfulRuns"] = 0,
+                ["totalFailedRuns"] = 0,
+                ["recentRuns"] = new List<object>(),
+                ["lastUpdated"] = DateTime.UtcNow
+            };
+        }
+    }
+
+    public async Task<Dictionary<string, List<JobRunHistory>>> GetAllJobHistoriesAsync()
+    {
+        return await _runHistoryService.LoadAllRunHistoriesAsync();
     }
 }
 

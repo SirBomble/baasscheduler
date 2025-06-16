@@ -255,6 +255,43 @@ app.MapGet("/api/jobs/{jobName}/history", ([FromRoute] string jobName, [FromServ
     return history != null ? Results.Ok(history) : Results.NotFound();
 });
 
+// Historical statistics endpoint
+app.MapGet("/api/stats/historical", async ([FromServices] SchedulerService svc) =>
+{
+    var stats = await svc.GetHistoricalStatsAsync();
+    return Results.Ok(stats);
+});
+
+// All job histories endpoint (for the run history modal)
+app.MapGet("/api/runhistory/all", async ([FromServices] SchedulerService svc) =>
+{
+    var histories = await svc.GetAllJobHistoriesAsync();
+    var flatHistory = new List<object>();
+    
+    foreach (var kvp in histories)
+    {
+        var jobName = kvp.Key;
+        var runs = kvp.Value;
+        
+        foreach (var run in runs)
+        {
+            flatHistory.Add(new
+            {
+                JobName = jobName,
+                StartTime = run.StartTime,
+                EndTime = run.EndTime,
+                Success = run.Success,
+                Message = run.Message,
+                OutputLog = run.OutputLog,
+                Duration = run.Duration,
+                ExitCode = run.ExitCode
+            });
+        }
+    }
+    
+    return Results.Ok(flatHistory.OrderByDescending(r => ((dynamic)r).StartTime));
+});
+
 app.MapGet("/", () => Results.Redirect("/index.html"));
 app.MapGet("/api/jobs", ([FromServices] SchedulerService svc) => svc.GetJobs());
 app.MapGet("/api/status", ([FromServices] SchedulerService svc) => svc.GetStatuses());
