@@ -5,11 +5,23 @@ namespace BaaSScheduler;
 public class SessionService
 {
     private readonly ConcurrentDictionary<string, DateTime> _activeSessions = new();
-    private readonly TimeSpan _sessionTimeout = TimeSpan.FromHours(1);
-
-    public string CreateSession(string password, string configPassword)
+    private readonly TimeSpan _sessionTimeout = TimeSpan.FromHours(1);    public string CreateSession(string password, string configPassword)
     {
-        if (password != configPassword)
+        // Support both plain text passwords (for backward compatibility) and Argon2 hashes
+        bool isValidPassword;
+        
+        if (configPassword.Length > 50 && IsBase64String(configPassword))
+        {
+            // Assume it's an Argon2 hash if it's long and base64-encoded
+            isValidPassword = PasswordService.VerifyPassword(password, configPassword);
+        }
+        else
+        {
+            // Plain text comparison for backward compatibility
+            isValidPassword = password == configPassword;
+        }
+
+        if (!isValidPassword)
         {
             throw new UnauthorizedAccessException("Invalid password");
         }
@@ -21,6 +33,19 @@ public class SessionService
         CleanupExpiredSessions();
         
         return sessionId;
+    }
+
+    private static bool IsBase64String(string s)
+    {
+        try
+        {
+            Convert.FromBase64String(s);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     public bool IsValidSession(string sessionId)

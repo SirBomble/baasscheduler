@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.FileProviders;
 using System.Reflection;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Cryptography.X509Certificates;
 
 // optional configuration file parameter
 string configFile = @"C:\BAAS\BaaSScheduler.json";
@@ -45,6 +46,44 @@ if (args.Contains("--uninstall"))
     return;
 }
 
+// Handle password generation
+if (args.Contains("--generate-password"))
+{
+    var (password, hash) = PasswordService.GeneratePassword();
+    Console.WriteLine($"Generated password: {password}");
+    Console.WriteLine($"PBKDF2 hash (use this in config): {hash}");
+    Console.WriteLine();
+    Console.WriteLine("Copy the PBKDF2 hash to your configuration file's web.password field.");
+    return;
+}
+
+// Handle help command
+if (args.Contains("--help") || args.Contains("-h"))
+{
+    Console.WriteLine("BaaS Scheduler - Background as a Service Scheduler");
+    Console.WriteLine();
+    Console.WriteLine("Usage:");
+    Console.WriteLine("  BaaSScheduler [options]");
+    Console.WriteLine();
+    Console.WriteLine("Options:");
+    Console.WriteLine("  --config <path>         Specify custom configuration file path");
+    Console.WriteLine("  --config=<path>         Specify custom configuration file path");
+    Console.WriteLine("  --console               Run in console mode (not as service)");
+    Console.WriteLine("  --install               Install as Windows service");
+    Console.WriteLine("  --uninstall             Uninstall Windows service");    Console.WriteLine("  --generate-password     Generate a new secure password hash");
+    Console.WriteLine("  --help, -h              Show this help message");
+    Console.WriteLine();
+    Console.WriteLine("HTTPS Configuration:");
+    Console.WriteLine("  The application only serves HTTPS traffic for security.");
+    Console.WriteLine("  A self-signed certificate is automatically generated on first run.");
+    Console.WriteLine("  Configure web.port to change the HTTPS port (default: 5001).");
+    Console.WriteLine("  Set custom certificate with web.certificatePath and web.certificatePassword.");
+    Console.WriteLine();    Console.WriteLine("Password Security:");
+    Console.WriteLine("  Use --generate-password to create secure PBKDF2 password hashes.");
+    Console.WriteLine("  Plain text passwords are supported for backward compatibility.");
+    return;
+}
+
 var isService = !(Debugger.IsAttached || args.Contains("--console"));
 var builder = WebApplication.CreateBuilder(args);
 
@@ -58,17 +97,18 @@ if (configFile == @"C:\BAAS\BaaSScheduler.json")
     {
         Directory.CreateDirectory(configDir!);
     }
-    
-    // Create default config file if it doesn't exist
+      // Create default config file if it doesn't exist
     if (!File.Exists(configFile))
     {
-        var defaultConfig = new SchedulerConfig
+        // Generate a secure password by default
+        var (defaultPassword, passwordHash) = PasswordService.GeneratePassword();
+          var defaultConfig = new SchedulerConfig
         {
             Web = new WebConfig
             {
                 Host = "localhost",
-                Port = 5000,
-                Password = "changeme"
+                Port = 5001, // HTTPS port
+                Password = passwordHash // Store the PBKDF2 hash
             },
             Webhooks = new WebhookConfig
             {
@@ -84,6 +124,17 @@ if (configFile == @"C:\BAAS\BaaSScheduler.json")
         });
         
         File.WriteAllText(configFile, json);
+        
+        // Log the generated password for first-time setup
+        if (!isService)
+        {
+            Console.WriteLine("=== IMPORTANT: FIRST-TIME SETUP ===");
+            Console.WriteLine($"A new configuration file has been created at: {configFile}");
+            Console.WriteLine($"Generated login password: {defaultPassword}");
+            Console.WriteLine("Please save this password as it won't be shown again!");
+            Console.WriteLine("You can generate a new password using: --generate-password");
+            Console.WriteLine("=====================================");
+        }
     }
 }
 
@@ -110,7 +161,58 @@ builder.Services.AddSingleton<SessionService>();
 
 var config = builder.Configuration.Get<SchedulerConfig>() ?? new SchedulerConfig();
 
-builder.WebHost.UseUrls($"http://{config.Web.Host}:{config.Web.Port}");
+// Configure HTTPS with self-signed certificate (HTTPS only)
+X509Certificate2? certificate = null;
+
+if (!string.IsNullOrEmpty(config.Web.CertificatePath) && File.Exists(config.Web.CertificatePath))
+{
+    // Load existing certificate
+    try
+    {
+        certificate = CertificateService.LoadCertificateFromFile(config.Web.CertificatePath, config.Web.CertificatePassword);
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Failed to load certificate from {config.Web.CertificatePath}: {ex.Message}");
+        Console.WriteLine("Generating a new self-signed certificate...");
+    }
+}
+
+if (certificate == null)
+{
+    // Generate self-signed certificate
+    certificate = CertificateService.CreateSelfSignedCertificate(config.Web.Host);
+    
+    // Save the certificate for future use
+    var certDir = Path.GetDirectoryName(configFile);
+    var certPath = Path.Combine(certDir!, "baasscheduler.pfx");
+    var certPassword = Guid.NewGuid().ToString("N")[..16]; // Generate random password
+    
+    try
+    {
+        CertificateService.SaveCertificateToFile(certificate, certPath, certPassword);
+        
+        if (!isService)
+        {
+            Console.WriteLine($"Self-signed certificate generated and saved to: {certPath}");
+            Console.WriteLine($"Certificate password: {certPassword}");
+            Console.WriteLine("You can configure these paths in your configuration file if needed.");
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Warning: Could not save certificate: {ex.Message}");
+    }
+}
+
+// Configure Kestrel to only serve HTTPS
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.ListenAnyIP(config.Web.Port, listenOptions =>
+    {
+        listenOptions.UseHttps(certificate);
+    });
+});
 
 var app = builder.Build();
 var embeddedProvider = new EmbeddedFileProvider(Assembly.GetExecutingAssembly(), "");
@@ -171,6 +273,16 @@ app.MapPost("/api/auth/logout", ([FromServices] SessionService sessionService, H
         sessionService.InvalidateSession(sessionId);
     }
     return Results.Ok();
+});
+
+app.MapPost("/api/auth/generate-password", () =>
+{
+    var (password, hash) = PasswordService.GeneratePassword();
+    return Results.Ok(new { 
+        Password = password, 
+        Hash = hash,
+        Message = "Save the hash in your configuration file's web.password field and use the password to login."
+    });
 });
 
 // File browser endpoints

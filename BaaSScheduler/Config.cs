@@ -20,8 +20,10 @@ public class JobConfig
 public class WebConfig
 {
     public string Host { get; set; } = "localhost";
-    public int Port { get; set; } = 5000;
+    public int Port { get; set; } = 5001; // HTTPS port
     public string Password { get; set; } = "changeme";
+    public string CertificatePath { get; set; } = "";
+    public string CertificatePassword { get; set; } = "";
 }
 
 public class WebhookConfig
