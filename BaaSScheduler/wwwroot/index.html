@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BaaS Scheduler</title>
+    <!-- Updated: 2025-06-17 Certificate Settings Fix -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
@@ -84,8 +85,7 @@
                     </div>
                 </div>            </header>
 
-            <main class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-                <!-- Configuration Info -->
+            <main class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">                <!-- Configuration Info -->
                 <div v-if="configurationFilePath" class="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
                     <div class="flex items-center">
                         <i class="fas fa-info-circle text-blue-600 mr-2"></i>
@@ -94,8 +94,30 @@
                         </span>
                     </div>
                 </div>
-                
-                <!-- Stats Cards -->
+
+                <!-- Navigation Tabs -->
+                <div class="mb-6">
+                    <nav class="flex space-x-8" aria-label="Tabs">
+                        <button 
+                            @click="activeTab = 'dashboard'"
+                            :class="activeTab === 'dashboard' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
+                            class="whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm"
+                        >
+                            <i class="fas fa-tachometer-alt mr-2"></i>Dashboard
+                        </button>
+                        <button 
+                            @click="activeTab = 'settings'"
+                            :class="activeTab === 'settings' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
+                            class="whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm"
+                        >
+                            <i class="fas fa-cog mr-2"></i>Settings
+                        </button>
+                    </nav>
+                </div>
+
+                <!-- Dashboard Tab -->
+                <div v-show="activeTab === 'dashboard'">
+                    <!-- Stats Cards -->
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
                     <div class="bg-white overflow-hidden shadow rounded-lg">
                         <div class="p-5">
@@ -309,7 +331,141 @@
                                         </td>
                                     </tr>
                                 </tbody>
-                            </table>
+                            </table>                        </div>
+                    </div>
+                </div>
+                </div>
+
+                <!-- Settings Tab -->
+                <div v-show="activeTab === 'settings'" class="space-y-6">
+                    <div class="bg-white shadow rounded-lg">
+                        <div class="px-4 py-5 sm:p-6">
+                            <h3 class="text-lg font-medium text-gray-900 mb-4">
+                                <i class="fas fa-shield-alt mr-2"></i>Certificate Settings
+                            </h3>
+                            
+                            <!-- Certificate Status -->
+                            <div class="mb-6 p-4 bg-gray-50 rounded-lg">
+                                <h4 class="text-sm font-medium text-gray-700 mb-2">Current Certificate Status</h4>
+                                <div v-if="certificateStatus" class="space-y-2">
+                                    <div class="flex items-center">
+                                        <span class="text-sm text-gray-600 w-32">Certificate:</span>
+                                        <span :class="certificateStatus.certificateExists ? 'text-green-600' : 'text-red-600'" class="text-sm font-medium">
+                                            <i :class="certificateStatus.certificateExists ? 'fas fa-check-circle' : 'fas fa-times-circle'" class="mr-1"></i>
+                                            {{ certificateStatus.certificateExists ? 'Present' : 'Missing' }}
+                                        </span>
+                                    </div>
+                                    <div class="flex items-center" v-if="certificateStatus.certificateExists">
+                                        <span class="text-sm text-gray-600 w-32">Trusted:</span>
+                                        <span :class="certificateStatus.isTrusted ? 'text-green-600' : 'text-orange-600'" class="text-sm font-medium">
+                                            <i :class="certificateStatus.isTrusted ? 'fas fa-check-circle' : 'fas fa-exclamation-triangle'" class="mr-1"></i>
+                                            {{ certificateStatus.isTrusted ? 'Yes' : 'No' }}
+                                        </span>
+                                    </div>
+                                    <div class="flex items-center" v-if="certificateStatus.certificateExists && certificateStatus.expiryDate">
+                                        <span class="text-sm text-gray-600 w-32">Expires:</span>
+                                        <span :class="certificateStatus.needsRenewal ? 'text-red-600' : 'text-green-600'" class="text-sm font-medium">
+                                            {{ formatDate(certificateStatus.expiryDate) }}
+                                            <span v-if="certificateStatus.needsRenewal" class="ml-1 text-red-600">
+                                                <i class="fas fa-exclamation-triangle"></i> Needs Renewal
+                                            </span>
+                                        </span>
+                                    </div>
+                                    <div class="flex items-center" v-if="certificateStatus.certificateExists && certificateStatus.thumbprint">
+                                        <span class="text-sm text-gray-600 w-32">Thumbprint:</span>
+                                        <span class="text-xs font-mono text-gray-800">{{ certificateStatus.thumbprint }}</span>
+                                    </div>
+                                </div>
+                                <div v-else class="text-sm text-gray-600">
+                                    <i class="fas fa-spinner fa-spin mr-2"></i>Loading certificate status...
+                                </div>
+                            </div>
+
+                            <!-- Settings Form -->
+                            <form @submit.prevent="saveSettings" class="space-y-4">
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label class="flex items-center space-x-2">
+                                            <input 
+                                                type="checkbox" 
+                                                v-model="settings.trustSelfSignedCert"
+                                                class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                            >
+                                            <span class="text-sm font-medium text-gray-700">Trust Self-Signed Certificate</span>
+                                        </label>
+                                        <p class="text-xs text-gray-500 mt-1">
+                                            Automatically trust the self-signed certificate in the local machine's trusted root store
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <label class="flex items-center space-x-2">
+                                            <input 
+                                                type="checkbox" 
+                                                v-model="settings.autoRenewCert"
+                                                class="rounded border-gray-300 text-blue-600 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                                            >
+                                            <span class="text-sm font-medium text-gray-700">Auto-Renew Certificate</span>
+                                        </label>
+                                        <p class="text-xs text-gray-500 mt-1">
+                                            Automatically renew the certificate before it expires
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">Certificate Validity (Days)</label>
+                                    <input 
+                                        type="number" 
+                                        v-model="settings.certValidityDays"
+                                        min="30" 
+                                        max="3650"
+                                        class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                    >
+                                    <p class="text-xs text-gray-500 mt-1">
+                                        Number of days the certificate will be valid for when generated
+                                    </p>
+                                </div>
+
+                                <div class="flex justify-between items-center pt-4">
+                                    <div class="space-x-2">
+                                        <button 
+                                            type="button"
+                                            @click="trustCertificate"
+                                            :disabled="!certificateStatus?.certificateExists || certificateStatus?.isTrusted || settingsLoading"
+                                            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            <i class="fas fa-shield-alt mr-2"></i>Trust Certificate
+                                        </button>
+                                        <button 
+                                            type="button"
+                                            @click="renewCertificate"
+                                            :disabled="settingsLoading"
+                                            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            <i class="fas fa-sync-alt mr-2"></i>Renew Certificate
+                                        </button>
+                                    </div>
+                                    <button 
+                                        type="submit"
+                                        :disabled="settingsLoading"
+                                        class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        <i v-if="settingsLoading" class="fas fa-spinner fa-spin mr-2"></i>
+                                        <i v-else class="fas fa-save mr-2"></i>
+                                        {{ settingsLoading ? 'Saving...' : 'Save Settings' }}
+                                    </button>
+                                </div>
+                            </form>
+
+                            <!-- Settings Messages -->
+                            <div v-if="settingsMessage" class="mt-4 p-3 rounded-md" :class="settingsMessage.type === 'success' ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'">
+                                <div class="flex items-center">
+                                    <i :class="settingsMessage.type === 'success' ? 'fas fa-check-circle text-green-600' : 'fas fa-exclamation-circle text-red-600'" class="mr-2"></i>
+                                    <span :class="settingsMessage.type === 'success' ? 'text-green-800' : 'text-red-800'" class="text-sm">
+                                        {{ settingsMessage.text }}
+                                    </span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1008,11 +1164,23 @@ const { createApp } = Vue;        createApp({            data() {
                         recentRuns: [],
                         lastUpdated: null
                     },
-                    
-                    // Auto-refresh settings
+                      // Auto-refresh settings
                     autoRefresh: true,
                     refreshInterval: 30000, // 30 seconds
-                    refreshTimer: null
+                    refreshTimer: null,
+                    
+                    // UI state
+                    activeTab: 'dashboard',
+                    
+                    // Settings
+                    settings: {
+                        trustSelfSignedCert: false,
+                        autoRenewCert: true,
+                        certValidityDays: 365
+                    },
+                    settingsLoading: false,
+                    settingsMessage: null,
+                    certificateStatus: null
                 };
             },computed: {                enabledJobs() {
                     return this.jobs.filter(j => j.enabled).length;
@@ -1161,13 +1329,16 @@ const { createApp } = Vue;        createApp({            data() {
                     } catch (err) {
                         console.error('Error loading historical stats:', err);
                     }
-                },
-                
-                async authenticatedFetch(url, options = {}) {
+                },                async authenticatedFetch(url, options = {}) {
                     const headers = {
                         'X-Session-Id': this.sessionId,
                         ...options.headers
                     };
+                    
+                    // Set Content-Type to application/json for requests with body if not already set
+                    if (options.body && typeof options.body === 'string' && !headers['Content-Type']) {
+                        headers['Content-Type'] = 'application/json';
+                    }
                     
                     const response = await fetch(url, { ...options, headers });
                     
@@ -1693,8 +1864,7 @@ const { createApp } = Vue;        createApp({            data() {
                         this.refreshTimer = null;
                     }
                 },
-                
-                toggleAutoRefresh() {
+                  toggleAutoRefresh() {
                     this.autoRefresh = !this.autoRefresh;
                     if (this.autoRefresh) {
                         this.startAutoRefresh();
@@ -1702,15 +1872,164 @@ const { createApp } = Vue;        createApp({            data() {
                         this.stopAutoRefresh();
                     }
                 },
-            },              mounted() {
+
+                // Settings methods
+                async loadSettings() {
+                    try {
+                        const response = await this.authenticatedFetch('/api/settings');
+                        if (response.ok) {
+                            const data = await response.json();
+                            this.settings = {
+                                trustSelfSignedCert: data.trustSelfSignedCert,
+                                autoRenewCert: data.autoRenewCert,
+                                certValidityDays: data.certValidityDays
+                            };
+                        }
+                    } catch (err) {
+                        console.error('Error loading settings:', err);
+                    }
+                },
+
+                async loadCertificateStatus() {
+                    try {
+                        const response = await this.authenticatedFetch('/api/settings/certificate/status');
+                        if (response.ok) {
+                            this.certificateStatus = await response.json();
+                        }
+                    } catch (err) {
+                        console.error('Error loading certificate status:', err);
+                    }
+                },                async saveSettings() {
+                    this.settingsLoading = true;
+                    this.settingsMessage = null;
+                    
+                    try {
+                        console.log('Saving settings:', this.settings);
+                        const response = await this.authenticatedFetch('/api/settings', {
+                            method: 'POST',
+                            body: JSON.stringify(this.settings)
+                        });
+                        
+                        console.log('Response status:', response.status);
+                        const result = await response.json();
+                        
+                        if (result.success) {
+                            this.settingsMessage = {
+                                type: 'success',
+                                text: result.message || 'Settings saved successfully'
+                            };
+                            // Reload certificate status
+                            await this.loadCertificateStatus();
+                        } else {
+                            this.settingsMessage = {
+                                type: 'error',
+                                text: result.message || 'Failed to save settings'
+                            };
+                        }
+                    } catch (err) {
+                        console.error('Error saving settings:', err);
+                        this.settingsMessage = {
+                            type: 'error',
+                            text: 'Network error while saving settings'
+                        };
+                    } finally {
+                        this.settingsLoading = false;
+                        // Clear message after 5 seconds
+                        setTimeout(() => {
+                            this.settingsMessage = null;
+                        }, 5000);
+                    }
+                },
+
+                async trustCertificate() {
+                    this.settingsLoading = true;
+                    this.settingsMessage = null;
+                    
+                    try {
+                        const response = await this.authenticatedFetch('/api/settings/certificate/trust', {
+                            method: 'POST'
+                        });
+                        
+                        const result = await response.json();
+                        
+                        if (result.success) {
+                            this.settingsMessage = {
+                                type: 'success',
+                                text: result.message || 'Certificate trusted successfully'
+                            };
+                            // Reload certificate status
+                            await this.loadCertificateStatus();
+                        } else {
+                            this.settingsMessage = {
+                                type: 'error',
+                                text: result.message || 'Failed to trust certificate'
+                            };
+                        }
+                    } catch (err) {
+                        console.error('Error trusting certificate:', err);
+                        this.settingsMessage = {
+                            type: 'error',
+                            text: 'Network error while trusting certificate'
+                        };
+                    } finally {
+                        this.settingsLoading = false;
+                        // Clear message after 5 seconds
+                        setTimeout(() => {
+                            this.settingsMessage = null;
+                        }, 5000);
+                    }
+                },
+
+                async renewCertificate() {
+                    if (!confirm('Are you sure you want to renew the certificate? This will require restarting the application.')) {
+                        return;
+                    }
+
+                    this.settingsLoading = true;
+                    this.settingsMessage = null;
+                    
+                    try {
+                        const response = await this.authenticatedFetch('/api/settings/certificate/renew', {
+                            method: 'POST'
+                        });
+                        
+                        const result = await response.json();
+                        
+                        if (result.success) {
+                            this.settingsMessage = {
+                                type: 'success',
+                                text: result.message || 'Certificate renewed successfully'
+                            };
+                            // Reload certificate status
+                            await this.loadCertificateStatus();
+                        } else {
+                            this.settingsMessage = {
+                                type: 'error',
+                                text: result.message || 'Failed to renew certificate'
+                            };
+                        }
+                    } catch (err) {
+                        console.error('Error renewing certificate:', err);
+                        this.settingsMessage = {
+                            type: 'error',
+                            text: 'Network error while renewing certificate'
+                        };
+                    } finally {
+                        this.settingsLoading = false;
+                        // Clear message after 10 seconds (longer for renewal)
+                        setTimeout(() => {
+                            this.settingsMessage = null;
+                        }, 10000);
+                    }
+                },
+            },mounted() {
                 this.checkStoredSession();
             },
             
             beforeUnmount() {
                 this.stopAutoRefresh();
             },
-            
-            watch: {
+              watch: {
                 showFilePicker(newVal) {
                     if (newVal) {
                         // Initialize file browser to user profile directory
@@ -1720,6 +2039,12 @@ const { createApp } = Vue;        createApp({            data() {
                 showHistoryModal(newVal) {
                     if (newVal) {
                         this.loadJobHistory();
+                    }
+                },
+                activeTab(newVal) {
+                    if (newVal === 'settings') {
+                        this.loadSettings();
+                        this.loadCertificateStatus();
                     }
                 }
             }

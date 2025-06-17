@@ -65,4 +65,90 @@ public static class CertificateService
     {
         return new X509Certificate2(filePath, password, X509KeyStorageFlags.Exportable);
     }
+
+    /// <summary>
+    /// Installs a certificate to the Local Machine's Trusted Root Certification Authorities store
+    /// </summary>
+    /// <param name="certificate">Certificate to trust</param>
+    /// <returns>True if successful, false otherwise</returns>
+    public static bool TrustCertificate(X509Certificate2 certificate)
+    {
+        try
+        {
+            using var store = new X509Store(StoreName.Root, StoreLocation.LocalMachine);
+            store.Open(OpenFlags.ReadWrite);
+            
+            // Check if certificate is already trusted
+            var existing = store.Certificates.Find(X509FindType.FindByThumbprint, certificate.Thumbprint, false);
+            if (existing.Count > 0)
+            {
+                return true; // Already trusted
+            }
+            
+            store.Add(certificate);
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Removes a certificate from the Local Machine's Trusted Root Certification Authorities store
+    /// </summary>
+    /// <param name="certificate">Certificate to remove</param>
+    /// <returns>True if successful, false otherwise</returns>
+    public static bool RemoveTrustedCertificate(X509Certificate2 certificate)
+    {
+        try
+        {
+            using var store = new X509Store(StoreName.Root, StoreLocation.LocalMachine);
+            store.Open(OpenFlags.ReadWrite);
+            
+            var existing = store.Certificates.Find(X509FindType.FindByThumbprint, certificate.Thumbprint, false);
+            if (existing.Count > 0)
+            {
+                store.Remove(existing[0]);
+            }
+            
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Checks if a certificate is trusted in the Local Machine's Trusted Root Certification Authorities store
+    /// </summary>
+    /// <param name="certificate">Certificate to check</param>
+    /// <returns>True if trusted, false otherwise</returns>
+    public static bool IsCertificateTrusted(X509Certificate2 certificate)
+    {
+        try
+        {
+            using var store = new X509Store(StoreName.Root, StoreLocation.LocalMachine);
+            store.Open(OpenFlags.ReadOnly);
+            
+            var existing = store.Certificates.Find(X509FindType.FindByThumbprint, certificate.Thumbprint, false);
+            return existing.Count > 0;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Checks if a certificate needs renewal based on expiration date
+    /// </summary>
+    /// <param name="certificate">Certificate to check</param>
+    /// <param name="daysBeforeExpiry">Days before expiry to consider renewal needed</param>
+    /// <returns>True if renewal is needed, false otherwise</returns>
+    public static bool ShouldRenewCertificate(X509Certificate2 certificate, int daysBeforeExpiry = 30)
+    {
+        return certificate.NotAfter <= DateTime.Now.AddDays(daysBeforeExpiry);
+    }
 }

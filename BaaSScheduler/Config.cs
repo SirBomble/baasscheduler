@@ -24,6 +24,9 @@ public class WebConfig
     public string Password { get; set; } = "changeme";
     public string CertificatePath { get; set; } = "";
     public string CertificatePassword { get; set; } = "";
+    public bool TrustSelfSignedCert { get; set; } = false;
+    public bool AutoRenewCert { get; set; } = true;
+    public int CertValidityDays { get; set; } = 365;
 }
 
 public class WebhookConfig
@@ -45,4 +48,13 @@ public class OperationResult
 
     public static OperationResult Ok(string message = "") => new() { Success = true, Message = message };
     public static OperationResult Error(string message) => new() { Success = false, Message = message };
+}
+
+public class SettingsUpdateRequest
+{
+    public bool? TrustSelfSignedCert { get; set; }
+    public bool? AutoRenewCert { get; set; }
+    public int? CertValidityDays { get; set; }
+    public string? CertificatePath { get; set; }
+    public string? CertificatePassword { get; set; }
 }

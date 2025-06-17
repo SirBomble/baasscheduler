@@ -157,6 +157,7 @@ builder.Services.AddSingleton<IConfigurationService, ConfigurationService>();
 builder.Services.AddSingleton<IRunHistoryService, RunHistoryService>();
 builder.Services.AddSingleton<SchedulerService>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<SchedulerService>());
+builder.Services.AddHostedService<CertificateBackgroundService>();
 builder.Services.AddSingleton<SessionService>();
 
 var config = builder.Configuration.Get<SchedulerConfig>() ?? new SchedulerConfig();
@@ -181,7 +182,7 @@ if (!string.IsNullOrEmpty(config.Web.CertificatePath) && File.Exists(config.Web.
 if (certificate == null)
 {
     // Generate self-signed certificate
-    certificate = CertificateService.CreateSelfSignedCertificate(config.Web.Host);
+    certificate = CertificateService.CreateSelfSignedCertificate(config.Web.Host, config.Web.CertValidityDays);
     
     // Save the certificate for future use
     var certDir = Path.GetDirectoryName(configFile);
@@ -191,6 +192,24 @@ if (certificate == null)
     try
     {
         CertificateService.SaveCertificateToFile(certificate, certPath, certPassword);
+        
+        // Update config with certificate paths
+        config.Web.CertificatePath = certPath;
+        config.Web.CertificatePassword = certPassword;
+        
+        // Auto-trust certificate if setting is enabled
+        if (config.Web.TrustSelfSignedCert)
+        {
+            var trusted = CertificateService.TrustCertificate(certificate);
+            if (!isService && trusted)
+            {
+                Console.WriteLine("Self-signed certificate has been trusted in the local machine store.");
+            }
+            else if (!isService && !trusted)
+            {
+                Console.WriteLine("Warning: Could not trust certificate. Run as Administrator to trust certificates.");
+            }
+        }
         
         if (!isService)
         {
@@ -435,6 +454,149 @@ app.MapPatch("/api/jobs/{jobName}/toggle", ([FromRoute] string jobName, [FromSer
 {
     var result = svc.ToggleJob(jobName);
     return result.Success ? Results.Ok(result) : Results.BadRequest(result);
+});
+
+// Settings endpoints
+app.MapGet("/api/settings", ([FromServices] IConfiguration config) =>
+{
+    var schedulerConfig = config.Get<SchedulerConfig>() ?? new SchedulerConfig();
+    return Results.Ok(new
+    {
+        TrustSelfSignedCert = schedulerConfig.Web.TrustSelfSignedCert,
+        AutoRenewCert = schedulerConfig.Web.AutoRenewCert,
+        CertValidityDays = schedulerConfig.Web.CertValidityDays,
+        CertificatePath = schedulerConfig.Web.CertificatePath,
+        Host = schedulerConfig.Web.Host,
+        Port = schedulerConfig.Web.Port
+    });
+});
+
+app.MapPost("/api/settings", ([FromBody] SettingsUpdateRequest request, [FromServices] IConfiguration config, [FromServices] IConfigurationService configSvc) =>
+{
+    try
+    {
+        var result = configSvc.UpdateSettings(request);
+        return result.Success ? Results.Ok(result) : Results.BadRequest(result);
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { Success = false, Message = ex.Message });
+    }
+});
+
+app.MapGet("/api/settings/certificate/status", ([FromServices] IConfiguration config) =>
+{
+    try
+    {
+        var schedulerConfig = config.Get<SchedulerConfig>() ?? new SchedulerConfig();
+        
+        // Try to load current certificate
+        X509Certificate2? certificate = null;
+        bool certificateExists = false;
+        bool isTrusted = false;
+        bool needsRenewal = false;
+        DateTime? expiryDate = null;
+        string? thumbprint = null;
+        
+        if (!string.IsNullOrEmpty(schedulerConfig.Web.CertificatePath) && File.Exists(schedulerConfig.Web.CertificatePath))
+        {
+            try
+            {
+                certificate = CertificateService.LoadCertificateFromFile(schedulerConfig.Web.CertificatePath, schedulerConfig.Web.CertificatePassword);
+                certificateExists = true;
+                isTrusted = CertificateService.IsCertificateTrusted(certificate);
+                needsRenewal = CertificateService.ShouldRenewCertificate(certificate);
+                expiryDate = certificate.NotAfter;
+                thumbprint = certificate.Thumbprint;
+            }
+            catch
+            {
+                // Certificate file exists but couldn't load
+                certificateExists = false;
+            }
+        }
+        
+        return Results.Ok(new
+        {
+            CertificateExists = certificateExists,
+            IsTrusted = isTrusted,
+            NeedsRenewal = needsRenewal,
+            ExpiryDate = expiryDate,
+            Thumbprint = thumbprint
+        });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { Success = false, Message = ex.Message });
+    }
+});
+
+app.MapPost("/api/settings/certificate/trust", ([FromServices] IConfiguration config) =>
+{
+    try
+    {
+        var schedulerConfig = config.Get<SchedulerConfig>() ?? new SchedulerConfig();
+        
+        if (string.IsNullOrEmpty(schedulerConfig.Web.CertificatePath) || !File.Exists(schedulerConfig.Web.CertificatePath))
+        {
+            return Results.BadRequest(new { Success = false, Message = "Certificate file not found" });
+        }
+        
+        var certificate = CertificateService.LoadCertificateFromFile(schedulerConfig.Web.CertificatePath, schedulerConfig.Web.CertificatePassword);
+        var success = CertificateService.TrustCertificate(certificate);
+        
+        return success 
+            ? Results.Ok(new { Success = true, Message = "Certificate has been added to trusted root store" })
+            : Results.BadRequest(new { Success = false, Message = "Failed to trust certificate. Run as Administrator." });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { Success = false, Message = ex.Message });
+    }
+});
+
+app.MapPost("/api/settings/certificate/renew", ([FromServices] IConfiguration config, [FromServices] IConfigurationService configSvc) =>
+{
+    try
+    {
+        var schedulerConfig = config.Get<SchedulerConfig>() ?? new SchedulerConfig();
+        
+        // Generate new certificate
+        var newCertificate = CertificateService.CreateSelfSignedCertificate(schedulerConfig.Web.Host, schedulerConfig.Web.CertValidityDays);
+        
+        // Save new certificate
+        var certDir = Path.GetDirectoryName(configSvc.GetConfigurationFilePath());
+        var certPath = Path.Combine(certDir!, "baasscheduler.pfx");
+        var certPassword = Guid.NewGuid().ToString("N")[..16];
+        
+        CertificateService.SaveCertificateToFile(newCertificate, certPath, certPassword);
+        
+        // Update configuration with new certificate details
+        var updateRequest = new SettingsUpdateRequest
+        {
+            CertificatePath = certPath,
+            CertificatePassword = certPassword
+        };
+        
+        var result = configSvc.UpdateSettings(updateRequest);
+        
+        if (result.Success && schedulerConfig.Web.TrustSelfSignedCert)
+        {
+            // Auto-trust the new certificate if setting is enabled
+            CertificateService.TrustCertificate(newCertificate);
+        }
+        
+        return Results.Ok(new { 
+            Success = true, 
+            Message = "Certificate renewed successfully. Restart the application to use the new certificate.",
+            ExpiryDate = newCertificate.NotAfter,
+            Thumbprint = newCertificate.Thumbprint
+        });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { Success = false, Message = ex.Message });
+    }
 });
 
 app.Run();
