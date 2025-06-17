@@ -16,13 +16,37 @@ public static class CertificateService
         using var rsa = RSA.Create(2048);
         
         var request = new CertificateRequest($"CN={subjectName}", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
-        
-        // Add Subject Alternative Names
+          // Add Subject Alternative Names
         var sanBuilder = new SubjectAlternativeNameBuilder();
         sanBuilder.AddDnsName(subjectName);
         sanBuilder.AddDnsName("localhost");
+        
+        // Add the actual computer name
+        sanBuilder.AddDnsName(Environment.MachineName);
+        sanBuilder.AddDnsName($"{Environment.MachineName}.local");
+        
+        // Add IP addresses
         sanBuilder.AddIpAddress(System.Net.IPAddress.Loopback);
         sanBuilder.AddIpAddress(System.Net.IPAddress.IPv6Loopback);
+        
+        // Add local network IP addresses
+        try
+        {
+            var host = System.Net.Dns.GetHostEntry(System.Net.Dns.GetHostName());
+            foreach (var ip in host.AddressList)
+            {
+                if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork ||
+                    ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+                {
+                    sanBuilder.AddIpAddress(ip);
+                }
+            }
+        }
+        catch
+        {
+            // Ignore errors when getting network IPs
+        }
+        
         request.CertificateExtensions.Add(sanBuilder.Build());
         
         // Add Enhanced Key Usage for server authentication

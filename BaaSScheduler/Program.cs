@@ -162,7 +162,33 @@ builder.Services.AddSingleton<SessionService>();
 
 var config = builder.Configuration.Get<SchedulerConfig>() ?? new SchedulerConfig();
 
-// Configure HTTPS with self-signed certificate (HTTPS only)
+// Ensure certificate settings are configured using a temporary configuration service
+using var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
+var tempLogger = loggerFactory.CreateLogger<ConfigurationService>();
+var tempConfigService = new ConfigurationService(tempLogger, builder.Configuration);
+
+var certResult = tempConfigService.EnsureCertificateSettings();
+
+if (!certResult.Success && !isService)
+{
+    Console.WriteLine($"Certificate setup failed: {certResult.Message}");
+}
+
+// Re-read the configuration after ensuring certificate settings
+builder.Configuration.Sources.Clear();
+if (isCustomConfig)
+{
+    builder.Configuration.AddJsonFile(configFile, optional: false, reloadOnChange: true);
+}
+else
+{
+    builder.Configuration.AddJsonFile(configFile, optional: true, reloadOnChange: true);
+}
+
+// Update the config with potentially new certificate settings
+config = builder.Configuration.Get<SchedulerConfig>() ?? new SchedulerConfig();
+
+// Configure HTTPS with certificate
 X509Certificate2? certificate = null;
 
 if (!string.IsNullOrEmpty(config.Web.CertificatePath) && File.Exists(config.Web.CertificatePath))
@@ -171,56 +197,30 @@ if (!string.IsNullOrEmpty(config.Web.CertificatePath) && File.Exists(config.Web.
     try
     {
         certificate = CertificateService.LoadCertificateFromFile(config.Web.CertificatePath, config.Web.CertificatePassword);
+        
+        if (!isService)
+        {
+            Console.WriteLine($"Loaded existing certificate from: {config.Web.CertificatePath}");
+        }
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"Failed to load certificate from {config.Web.CertificatePath}: {ex.Message}");
-        Console.WriteLine("Generating a new self-signed certificate...");
+        if (!isService)
+        {
+            Console.WriteLine($"Failed to load certificate from {config.Web.CertificatePath}: {ex.Message}");
+            Console.WriteLine("Falling back to generate a new self-signed certificate...");
+        }
     }
 }
 
 if (certificate == null)
 {
-    // Generate self-signed certificate
+    // Fallback: Generate self-signed certificate if configuration service failed
     certificate = CertificateService.CreateSelfSignedCertificate(config.Web.Host, config.Web.CertValidityDays);
     
-    // Save the certificate for future use
-    var certDir = Path.GetDirectoryName(configFile);
-    var certPath = Path.Combine(certDir!, "baasscheduler.pfx");
-    var certPassword = Guid.NewGuid().ToString("N")[..16]; // Generate random password
-    
-    try
+    if (!isService)
     {
-        CertificateService.SaveCertificateToFile(certificate, certPath, certPassword);
-        
-        // Update config with certificate paths
-        config.Web.CertificatePath = certPath;
-        config.Web.CertificatePassword = certPassword;
-        
-        // Auto-trust certificate if setting is enabled
-        if (config.Web.TrustSelfSignedCert)
-        {
-            var trusted = CertificateService.TrustCertificate(certificate);
-            if (!isService && trusted)
-            {
-                Console.WriteLine("Self-signed certificate has been trusted in the local machine store.");
-            }
-            else if (!isService && !trusted)
-            {
-                Console.WriteLine("Warning: Could not trust certificate. Run as Administrator to trust certificates.");
-            }
-        }
-        
-        if (!isService)
-        {
-            Console.WriteLine($"Self-signed certificate generated and saved to: {certPath}");
-            Console.WriteLine($"Certificate password: {certPassword}");
-            Console.WriteLine("You can configure these paths in your configuration file if needed.");
-        }
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"Warning: Could not save certificate: {ex.Message}");
+        Console.WriteLine("Generated fallback self-signed certificate (not saved to configuration)");
     }
 }
 
@@ -592,6 +592,54 @@ app.MapPost("/api/settings/certificate/renew", ([FromServices] IConfiguration co
             ExpiryDate = newCertificate.NotAfter,
             Thumbprint = newCertificate.Thumbprint
         });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { Success = false, Message = ex.Message });
+    }
+});
+
+app.MapPost("/api/settings/certificate/generate", ([FromServices] IConfigurationService configSvc) =>
+{
+    try
+    {
+        var result = configSvc.GenerateAndSaveCertificateSettings();
+        
+        if (result.Success)
+        {
+            return Results.Ok(new { 
+                Success = true, 
+                Message = "Certificate generated and saved to configuration successfully. Restart the application to use the new certificate."
+            });
+        }
+        else
+        {
+            return Results.BadRequest(new { Success = false, Message = result.Message });
+        }
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { Success = false, Message = ex.Message });
+    }
+});
+
+app.MapPost("/api/settings/certificate/ensure", ([FromServices] IConfigurationService configSvc) =>
+{
+    try
+    {
+        var result = configSvc.EnsureCertificateSettings();
+        
+        if (result.Success)
+        {
+            return Results.Ok(new { 
+                Success = true, 
+                Message = "Certificate settings verified or generated successfully."
+            });
+        }
+        else
+        {
+            return Results.BadRequest(new { Success = false, Message = result.Message });
+        }
     }
     catch (Exception ex)
     {

@@ -8,6 +8,8 @@ public interface IConfigurationService
     Task SaveConfigurationAsync(SchedulerConfig config);
     string GetConfigurationFilePath();
     OperationResult UpdateSettings(SettingsUpdateRequest request);
+    OperationResult GenerateAndSaveCertificateSettings(string? hostName = null, int validityDays = 365);
+    OperationResult EnsureCertificateSettings();
 }
 
 public class ConfigurationService : IConfigurationService
@@ -103,6 +105,112 @@ public class ConfigurationService : IConfigurationService
         {
             _logger.LogError(ex, "Failed to update settings");
             return OperationResult.Error($"Failed to update settings: {ex.Message}");
+        }
+    }
+
+    public OperationResult GenerateAndSaveCertificateSettings(string? hostName = null, int validityDays = 365)
+    {
+        try
+        {
+            // Read current configuration
+            var currentConfig = GetCurrentConfiguration();
+            
+            // Use hostname from config if not provided
+            hostName ??= currentConfig.Web.Host;
+            
+            // Generate certificate paths
+            var configDir = Path.GetDirectoryName(_configFilePath);
+            var certPath = Path.Combine(configDir!, "baasscheduler.pfx");
+            var certPassword = Guid.NewGuid().ToString("N")[..16]; // Generate random password
+            
+            // Generate self-signed certificate
+            var certificate = CertificateService.CreateSelfSignedCertificate(hostName, validityDays);
+            
+            // Save certificate to file
+            CertificateService.SaveCertificateToFile(certificate, certPath, certPassword);
+            
+            // Update configuration with certificate settings
+            currentConfig.Web.CertificatePath = certPath;
+            currentConfig.Web.CertificatePassword = certPassword;
+            currentConfig.Web.CertValidityDays = validityDays;
+            
+            // Auto-trust certificate if setting is enabled
+            if (currentConfig.Web.TrustSelfSignedCert)
+            {
+                var trusted = CertificateService.TrustCertificate(certificate);
+                if (!trusted)
+                {
+                    _logger.LogWarning("Could not trust self-signed certificate. Run as Administrator to trust certificates.");
+                }
+                else
+                {
+                    _logger.LogInformation("Self-signed certificate has been trusted in the local machine store.");
+                }
+            }
+            
+            // Save updated configuration
+            SaveConfigurationAsync(currentConfig).Wait();
+            
+            _logger.LogInformation("Certificate generated and saved to {CertPath}", certPath);
+            
+            certificate.Dispose();
+            
+            return OperationResult.Ok($"Certificate generated successfully. Path: {certPath}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to generate and save certificate settings");
+            return OperationResult.Error($"Failed to generate certificate: {ex.Message}");
+        }
+    }
+
+    public OperationResult EnsureCertificateSettings()
+    {
+        try
+        {
+            var currentConfig = GetCurrentConfiguration();
+            
+            // Check if certificate settings are missing or certificate file doesn't exist
+            bool needsNewCert = string.IsNullOrEmpty(currentConfig.Web.CertificatePath) ||
+                               string.IsNullOrEmpty(currentConfig.Web.CertificatePassword) ||
+                               !File.Exists(currentConfig.Web.CertificatePath);
+            
+            if (!needsNewCert)
+            {
+                // Check if existing certificate needs renewal
+                try
+                {
+                    var existingCert = CertificateService.LoadCertificateFromFile(
+                        currentConfig.Web.CertificatePath, 
+                        currentConfig.Web.CertificatePassword);
+                    
+                    if (CertificateService.ShouldRenewCertificate(existingCert))
+                    {
+                        _logger.LogInformation("Existing certificate needs renewal");
+                        needsNewCert = true;
+                    }
+                    
+                    existingCert.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Could not load existing certificate, generating new one");
+                    needsNewCert = true;
+                }
+            }
+            
+            if (needsNewCert)
+            {
+                _logger.LogInformation("Certificate settings not found or invalid, generating new certificate");
+                return GenerateAndSaveCertificateSettings(currentConfig.Web.Host, currentConfig.Web.CertValidityDays);
+            }
+            
+            return OperationResult.Ok("Certificate settings are valid");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to ensure certificate settings");
+            return OperationResult.Error($"Failed to ensure certificate settings: {ex.Message}");
         }
     }
 
