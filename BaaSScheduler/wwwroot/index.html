@@ -931,6 +931,7 @@ const { createApp } = Vue;        createApp({            data() {
                     authenticated: false,
                     sessionId: '',
                     sessionExpiry: null,
+                    currentTime: new Date(), // Add current time for session timer reactivity
                     jobs: [],
                     status: [],
                     loading: false,
@@ -1021,10 +1022,9 @@ const { createApp } = Vue;        createApp({            data() {
                 },
                 failedRuns() {
                     return this.historicalStats.totalFailedRuns;
-                },
-                sessionTimeRemaining() {
+                },                sessionTimeRemaining() {
                     if (!this.sessionExpiry) return '';
-                    const now = new Date();
+                    const now = this.currentTime; // Use reactive currentTime instead of new Date()
                     const remaining = this.sessionExpiry - now;
                     if (remaining <= 0) return 'Expired';
                     
@@ -1524,9 +1524,9 @@ const { createApp } = Vue;        createApp({            data() {
                         }
                     }
                 },
-                
-                startSessionTimer() {
+                  startSessionTimer() {
                     setInterval(() => {
+                        this.currentTime = new Date(); // Update current time to trigger reactivity
                         if (this.sessionExpiry && new Date() >= this.sessionExpiry) {
                             this.logout();
                         }
