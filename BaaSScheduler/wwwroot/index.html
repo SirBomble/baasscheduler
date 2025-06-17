@@ -347,17 +347,231 @@
                                 </select>
                             </div>
                         </div>
-                        
-                        <div>
-                            <label class="block text-sm font-medium text-gray-700 mb-1">Schedule (Cron Expression)</label>
-                            <input 
-                                v-model="jobForm.schedule" 
-                                type="text" 
-                                required 
-                                class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                                placeholder="*/5 * * * * (every 5 minutes)"
-                            >
-                            <p class="text-xs text-gray-500 mt-1">Format: minute hour day month day-of-week</p>
+                          <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Schedule Configuration</label>
+                            
+                            <!-- Toggle between Simple and Advanced mode -->
+                            <div class="flex items-center mb-4 space-x-4">
+                                <button 
+                                    type="button"
+                                    @click="cronMode = 'simple'"
+                                    :class="['px-3 py-1 text-sm rounded-md transition-colors', cronMode === 'simple' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300']"
+                                >
+                                    <i class="fas fa-clock mr-1"></i>Simple
+                                </button>
+                                <button 
+                                    type="button"
+                                    @click="cronMode = 'advanced'"
+                                    :class="['px-3 py-1 text-sm rounded-md transition-colors', cronMode === 'advanced' ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300']"
+                                >
+                                    <i class="fas fa-code mr-1"></i>Advanced
+                                </button>
+                            </div>
+
+                            <!-- Simple Mode -->
+                            <div v-if="cronMode === 'simple'" class="space-y-4">
+                                <!-- Preset Options -->
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Quick Presets</label>
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <button 
+                                            v-for="preset in cronPresets" 
+                                            :key="preset.name"
+                                            type="button"
+                                            @click="applyCronPreset(preset)"
+                                            class="p-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50 text-left transition-colors"
+                                        >
+                                            <div class="font-medium">{{ preset.name }}</div>
+                                            <div class="text-xs text-gray-500">{{ preset.description }}</div>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Custom Simple Schedule -->
+                                <div class="border-t pt-4">
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">Custom Schedule</label>
+                                    
+                                    <!-- Frequency Type -->
+                                    <div class="mb-3">
+                                        <select 
+                                            v-model="cronBuilder.frequency" 
+                                            @change="updateCronFromBuilder"
+                                            class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                        >
+                                            <option value="minute">Every Minute</option>
+                                            <option value="hour">Every Hour</option>
+                                            <option value="day">Every Day</option>
+                                            <option value="week">Every Week</option>
+                                            <option value="month">Every Month</option>
+                                        </select>
+                                    </div>
+
+                                    <!-- Minute-based options -->
+                                    <div v-if="cronBuilder.frequency === 'minute'" class="space-y-2">
+                                        <div class="flex items-center space-x-2">
+                                            <input 
+                                                v-model.number="cronBuilder.minuteInterval" 
+                                                type="number" 
+                                                min="1" 
+                                                max="59" 
+                                                @input="updateCronFromBuilder"
+                                                class="w-20 border border-gray-300 rounded-md px-2 py-1 text-sm"
+                                            >
+                                            <span class="text-sm text-gray-600">minute(s)</span>
+                                        </div>
+                                    </div>
+
+                                    <!-- Hour-based options -->
+                                    <div v-if="cronBuilder.frequency === 'hour'" class="space-y-2">
+                                        <div class="flex items-center space-x-2">
+                                            <span class="text-sm text-gray-600">Every</span>
+                                            <input 
+                                                v-model.number="cronBuilder.hourInterval" 
+                                                type="number" 
+                                                min="1" 
+                                                max="23" 
+                                                @input="updateCronFromBuilder"
+                                                class="w-20 border border-gray-300 rounded-md px-2 py-1 text-sm"
+                                            >
+                                            <span class="text-sm text-gray-600">hour(s) at minute</span>
+                                            <input 
+                                                v-model.number="cronBuilder.minute" 
+                                                type="number" 
+                                                min="0" 
+                                                max="59" 
+                                                @input="updateCronFromBuilder"
+                                                class="w-20 border border-gray-300 rounded-md px-2 py-1 text-sm"
+                                            >
+                                        </div>
+                                    </div>
+
+                                    <!-- Day-based options -->
+                                    <div v-if="cronBuilder.frequency === 'day'" class="space-y-2">
+                                        <div class="flex items-center space-x-2">
+                                            <span class="text-sm text-gray-600">Every</span>
+                                            <input 
+                                                v-model.number="cronBuilder.dayInterval" 
+                                                type="number" 
+                                                min="1" 
+                                                max="30" 
+                                                @input="updateCronFromBuilder"
+                                                class="w-20 border border-gray-300 rounded-md px-2 py-1 text-sm"
+                                            >
+                                            <span class="text-sm text-gray-600">day(s) at</span>
+                                            <input 
+                                                v-model="cronBuilder.time" 
+                                                type="time" 
+                                                @input="updateCronFromBuilder"
+                                                class="border border-gray-300 rounded-md px-2 py-1 text-sm"
+                                            >
+                                        </div>
+                                    </div>
+
+                                    <!-- Week-based options -->
+                                    <div v-if="cronBuilder.frequency === 'week'" class="space-y-2">
+                                        <div class="flex items-center space-x-2">
+                                            <span class="text-sm text-gray-600">Every</span>
+                                            <input 
+                                                v-model.number="cronBuilder.weekInterval" 
+                                                type="number" 
+                                                min="1" 
+                                                max="52" 
+                                                @input="updateCronFromBuilder"
+                                                class="w-20 border border-gray-300 rounded-md px-2 py-1 text-sm"
+                                            >
+                                            <span class="text-sm text-gray-600">week(s) on</span>
+                                        </div>
+                                        <div class="grid grid-cols-7 gap-1">
+                                            <label v-for="(day, index) in ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']" 
+                                                   :key="day" 
+                                                   class="flex flex-col items-center"
+                                            >
+                                                <input 
+                                                    v-model="cronBuilder.daysOfWeek" 
+                                                    :value="index" 
+                                                    type="checkbox" 
+                                                    @change="updateCronFromBuilder"
+                                                    class="mb-1"
+                                                >
+                                                <span class="text-xs">{{ day }}</span>
+                                            </label>
+                                        </div>
+                                        <div class="flex items-center space-x-2 mt-2">
+                                            <span class="text-sm text-gray-600">at</span>
+                                            <input 
+                                                v-model="cronBuilder.time" 
+                                                type="time" 
+                                                @input="updateCronFromBuilder"
+                                                class="border border-gray-300 rounded-md px-2 py-1 text-sm"
+                                            >
+                                        </div>
+                                    </div>
+
+                                    <!-- Month-based options -->
+                                    <div v-if="cronBuilder.frequency === 'month'" class="space-y-2">
+                                        <div class="flex items-center space-x-2">
+                                            <span class="text-sm text-gray-600">Every</span>
+                                            <input 
+                                                v-model.number="cronBuilder.monthInterval" 
+                                                type="number" 
+                                                min="1" 
+                                                max="12" 
+                                                @input="updateCronFromBuilder"
+                                                class="w-20 border border-gray-300 rounded-md px-2 py-1 text-sm"
+                                            >
+                                            <span class="text-sm text-gray-600">month(s) on day</span>
+                                            <input 
+                                                v-model.number="cronBuilder.dayOfMonth" 
+                                                type="number" 
+                                                min="1" 
+                                                max="31" 
+                                                @input="updateCronFromBuilder"
+                                                class="w-20 border border-gray-300 rounded-md px-2 py-1 text-sm"
+                                            >
+                                            <span class="text-sm text-gray-600">at</span>
+                                            <input 
+                                                v-model="cronBuilder.time" 
+                                                type="time" 
+                                                @input="updateCronFromBuilder"
+                                                class="border border-gray-300 rounded-md px-2 py-1 text-sm"
+                                            >
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Advanced Mode -->
+                            <div v-if="cronMode === 'advanced'">
+                                <input 
+                                    v-model="jobForm.schedule" 
+                                    type="text" 
+                                    required 
+                                    @input="parseCronToBuilder"
+                                    class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                    placeholder="*/5 * * * * (every 5 minutes)"
+                                >
+                                <p class="text-xs text-gray-500 mt-1">Format: minute hour day month day-of-week</p>
+                            </div>
+
+                            <!-- Current Schedule Display -->
+                            <div class="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                                <div class="flex items-center space-x-2">
+                                    <i class="fas fa-info-circle text-blue-600"></i>
+                                    <span class="text-sm font-medium text-blue-800">Current Schedule:</span>
+                                </div>
+                                <div class="mt-1 text-sm text-blue-700">
+                                    <div class="font-mono">{{ jobForm.schedule || 'Not set' }}</div>
+                                    <div class="mt-1 text-xs">{{ getCronDescription(jobForm.schedule) }}</div>
+                                </div>
+                                <div v-if="jobForm.schedule" class="mt-2 text-xs text-blue-600">
+                                    <strong>Next runs:</strong>
+                                    <ul class="mt-1 space-y-1">
+                                        <li v-for="nextRun in getNextRuns(jobForm.schedule)" :key="nextRun">
+                                            {{ nextRun }}
+                                        </li>
+                                    </ul>
+                                </div>
+                            </div>
                         </div>
                           <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1">Script Path</label>
@@ -743,8 +957,7 @@ const { createApp } = Vue;        createApp({            data() {
                         name: '',
                         status: '',
                         type: ''
-                    },
-                      // Run history
+                    },                    // Run history
                     showHistoryModal: false,
                     jobHistory: [],
                     historyLoading: false,
@@ -754,6 +967,37 @@ const { createApp } = Vue;        createApp({            data() {
                         dateFrom: '',
                         dateTo: ''
                     },
+                    
+                    // Cron builder
+                    cronMode: 'simple',
+                    cronBuilder: {
+                        frequency: 'minute',
+                        minuteInterval: 5,
+                        hourInterval: 1,
+                        dayInterval: 1,
+                        weekInterval: 1,
+                        monthInterval: 1,
+                        minute: 0,
+                        dayOfMonth: 1,
+                        time: '00:00',
+                        daysOfWeek: []
+                    },
+                    cronPresets: [
+                        { name: 'Every 5 minutes', description: 'Runs every 5 minutes', cron: '*/5 * * * *' },
+                        { name: 'Every 15 minutes', description: 'Runs every 15 minutes', cron: '*/15 * * * *' },
+                        { name: 'Every 30 minutes', description: 'Runs every 30 minutes', cron: '*/30 * * * *' },
+                        { name: 'Every hour', description: 'Runs at the top of every hour', cron: '0 * * * *' },
+                        { name: 'Every 2 hours', description: 'Runs every 2 hours', cron: '0 */2 * * *' },
+                        { name: 'Every 6 hours', description: 'Runs every 6 hours', cron: '0 */6 * * *' },
+                        { name: 'Daily at midnight', description: 'Runs once per day at midnight', cron: '0 0 * * *' },
+                        { name: 'Daily at 9 AM', description: 'Runs once per day at 9:00 AM', cron: '0 9 * * *' },
+                        { name: 'Daily at 6 PM', description: 'Runs once per day at 6:00 PM', cron: '0 18 * * *' },
+                        { name: 'Weekly on Monday', description: 'Runs every Monday at midnight', cron: '0 0 * * 1' },
+                        { name: 'Weekly on Friday', description: 'Runs every Friday at midnight', cron: '0 0 * * 5' },
+                        { name: 'Monthly on 1st', description: 'Runs on the 1st of every month', cron: '0 0 1 * *' },
+                        { name: 'Weekdays only', description: 'Runs Monday through Friday at 9 AM', cron: '0 9 * * 1-5' },
+                        { name: 'Weekend only', description: 'Runs Saturday and Sunday at 10 AM', cron: '0 10 * * 0,6' }
+                    ],
                     selectedHistoryRun: null,
                     
                     // Historical statistics
@@ -949,12 +1193,188 @@ const { createApp } = Vue;        createApp({            data() {
                         }
                     };
                 },
-                
-                resetJobForm() {
+                  resetJobForm() {
                     this.jobForm = this.getEmptyJobForm();
+                    this.cronBuilder = {
+                        frequency: 'minute',
+                        minuteInterval: 5,
+                        hourInterval: 1,
+                        dayInterval: 1,
+                        weekInterval: 1,
+                        monthInterval: 1,
+                        minute: 0,
+                        dayOfMonth: 1,
+                        time: '00:00',
+                        daysOfWeek: []
+                    };
+                    this.cronMode = 'simple';
                 },
                 
-                editJob(job) {
+                applyCronPreset(preset) {
+                    this.jobForm.schedule = preset.cron;
+                    this.parseCronToBuilder();
+                },
+                
+                updateCronFromBuilder() {
+                    let cron = '';
+                    
+                    switch (this.cronBuilder.frequency) {
+                        case 'minute':
+                            cron = `*/${this.cronBuilder.minuteInterval} * * * *`;
+                            break;
+                        case 'hour':
+                            cron = `${this.cronBuilder.minute} */${this.cronBuilder.hourInterval} * * *`;
+                            break;
+                        case 'day':
+                            const [hour, minute] = this.cronBuilder.time.split(':');
+                            cron = `${minute} ${hour} */${this.cronBuilder.dayInterval} * *`;
+                            break;
+                        case 'week':
+                            const [weekHour, weekMinute] = this.cronBuilder.time.split(':');
+                            if (this.cronBuilder.daysOfWeek.length === 0) {
+                                cron = `${weekMinute} ${weekHour} * * 0`; // Default to Sunday
+                            } else {
+                                const days = this.cronBuilder.daysOfWeek.sort().join(',');
+                                cron = `${weekMinute} ${weekHour} * * ${days}`;
+                            }
+                            break;
+                        case 'month':
+                            const [monthHour, monthMinute] = this.cronBuilder.time.split(':');
+                            cron = `${monthMinute} ${monthHour} ${this.cronBuilder.dayOfMonth} */${this.cronBuilder.monthInterval} *`;
+                            break;
+                    }
+                    
+                    this.jobForm.schedule = cron;
+                },
+                
+                parseCronToBuilder() {
+                    // Simple parsing to update builder from cron expression
+                    // This is a basic implementation - could be enhanced for more complex expressions
+                    const cron = this.jobForm.schedule;
+                    if (!cron) return;
+                    
+                    const parts = cron.split(' ');
+                    if (parts.length !== 5) return;
+                    
+                    const [minute, hour, day, month, dayOfWeek] = parts;
+                    
+                    // Try to detect the pattern and update builder accordingly
+                    if (minute.startsWith('*/') && hour === '*' && day === '*' && month === '*' && dayOfWeek === '*') {
+                        // Every X minutes
+                        this.cronBuilder.frequency = 'minute';
+                        this.cronBuilder.minuteInterval = parseInt(minute.substring(2));
+                    } else if (hour.startsWith('*/') && day === '*' && month === '*' && dayOfWeek === '*') {
+                        // Every X hours
+                        this.cronBuilder.frequency = 'hour';
+                        this.cronBuilder.hourInterval = parseInt(hour.substring(2));
+                        this.cronBuilder.minute = parseInt(minute);
+                    } else if (day.startsWith('*/') && month === '*' && dayOfWeek === '*') {
+                        // Every X days
+                        this.cronBuilder.frequency = 'day';
+                        this.cronBuilder.dayInterval = parseInt(day.substring(2));
+                        this.cronBuilder.time = `${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`;
+                    } else if (dayOfWeek !== '*' && day === '*' && month === '*') {
+                        // Weekly
+                        this.cronBuilder.frequency = 'week';
+                        this.cronBuilder.time = `${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`;
+                        if (dayOfWeek.includes(',')) {
+                            this.cronBuilder.daysOfWeek = dayOfWeek.split(',').map(d => parseInt(d));
+                        } else if (dayOfWeek.includes('-')) {
+                            const [start, end] = dayOfWeek.split('-').map(d => parseInt(d));
+                            this.cronBuilder.daysOfWeek = [];
+                            for (let i = start; i <= end; i++) {
+                                this.cronBuilder.daysOfWeek.push(i);
+                            }
+                        } else {
+                            this.cronBuilder.daysOfWeek = [parseInt(dayOfWeek)];
+                        }
+                    } else if (month.startsWith('*/') && dayOfWeek === '*') {
+                        // Monthly
+                        this.cronBuilder.frequency = 'month';
+                        this.cronBuilder.monthInterval = parseInt(month.substring(2));
+                        this.cronBuilder.dayOfMonth = parseInt(day);
+                        this.cronBuilder.time = `${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`;
+                    }
+                },
+                
+                getCronDescription(cron) {
+                    if (!cron) return 'No schedule set';
+                    
+                    const parts = cron.split(' ');
+                    if (parts.length !== 5) return 'Invalid cron expression';
+                    
+                    const [minute, hour, day, month, dayOfWeek] = parts;
+                    
+                    // Simple description generator
+                    if (minute.startsWith('*/') && hour === '*' && day === '*' && month === '*' && dayOfWeek === '*') {
+                        return `Every ${minute.substring(2)} minute(s)`;
+                    } else if (minute === '*' && hour.startsWith('*/') && day === '*' && month === '*' && dayOfWeek === '*') {
+                        return `Every ${hour.substring(2)} hour(s)`;
+                    } else if (hour.startsWith('*/') && day === '*' && month === '*' && dayOfWeek === '*') {
+                        return `Every ${hour.substring(2)} hour(s) at minute ${minute}`;
+                    } else if (minute !== '*' && hour !== '*' && day === '*' && month === '*' && dayOfWeek === '*') {
+                        return `Daily at ${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`;
+                    } else if (minute !== '*' && hour !== '*' && day === '*' && month === '*' && dayOfWeek !== '*') {
+                        const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                        if (dayOfWeek.includes(',')) {
+                            const days = dayOfWeek.split(',').map(d => dayNames[parseInt(d)]).join(', ');
+                            return `Weekly on ${days} at ${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`;
+                        } else if (dayOfWeek.includes('-')) {
+                            return `Weekdays at ${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`;
+                        } else {
+                            return `Weekly on ${dayNames[parseInt(dayOfWeek)]} at ${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`;
+                        }
+                    } else if (minute !== '*' && hour !== '*' && day !== '*' && month === '*' && dayOfWeek === '*') {
+                        return `Monthly on day ${day} at ${hour.padStart(2, '0')}:${minute.padStart(2, '0')}`;
+                    }
+                    
+                    return 'Custom schedule';
+                },
+                
+                getNextRuns(cron) {
+                    // This is a simplified version - in a real implementation you'd use a cron parsing library
+                    // For now, we'll just return some example next runs
+                    if (!cron) return [];
+                    
+                    const now = new Date();
+                    const nextRuns = [];
+                    
+                    // Simple calculation for common patterns
+                    try {
+                        const parts = cron.split(' ');
+                        if (parts.length !== 5) return ['Invalid cron expression'];
+                        
+                        const [minute, hour, day, month, dayOfWeek] = parts;
+                        
+                        if (minute.startsWith('*/')) {
+                            // Every X minutes
+                            const interval = parseInt(minute.substring(2));
+                            for (let i = 0; i < 3; i++) {
+                                const nextRun = new Date(now.getTime() + (interval * (i + 1) * 60 * 1000));
+                                nextRuns.push(nextRun.toLocaleString());
+                            }
+                        } else if (hour.startsWith('*/')) {
+                            // Every X hours
+                            const interval = parseInt(hour.substring(2));
+                            const runMinute = parseInt(minute);
+                            for (let i = 0; i < 3; i++) {
+                                const nextRun = new Date(now);
+                                nextRun.setTime(nextRun.getTime() + (interval * (i + 1) * 60 * 60 * 1000));
+                                nextRun.setMinutes(runMinute);
+                                nextRun.setSeconds(0);
+                                nextRuns.push(nextRun.toLocaleString());
+                            }
+                        } else {
+                            // More complex schedules - just show a placeholder
+                            nextRuns.push('Next run calculated by scheduler');
+                        }
+                    } catch (e) {
+                        nextRuns.push('Unable to calculate next runs');
+                    }
+                    
+                    return nextRuns;
+                },
+                  editJob(job) {
                     this.editingJob = job;
                     this.jobForm = {
                         name: job.name,
@@ -968,6 +1388,7 @@ const { createApp } = Vue;        createApp({            data() {
                             discord: job.webhooks?.discord || ''
                         }
                     };
+                    this.parseCronToBuilder();
                     this.showJobModal = true;
                 },
                 
